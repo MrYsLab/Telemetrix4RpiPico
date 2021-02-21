@@ -6,6 +6,8 @@
 #include <string.h>
 #include "pico/stdlib.h"
 #include "hardware/pwm.h"
+#include "pico/unique_id.h"
+#include "hardware/watchdog.h"
 
 // Differentiate between multiple Pico boards connected
 #define PICO_ID 1
@@ -45,7 +47,7 @@ extern void sonar_new();
 
 extern void serial_write(int *buffer, int num_of_bytes_to_send);
 
-extern void led_debug(int blinks);
+extern void led_debug(int blinks, uint delay);
 
 extern void send_debug_info(uint id, uint value);
 
@@ -57,10 +59,15 @@ extern void set_analog_scanning_interval();
 
 extern void enable_all_reports();
 
-void reset_data();
+extern void reset_data();
+
+extern void reset_board();
+
+extern void scan_digital_inputs();
 
 
 const uint LED_PIN = 25;
+
 
 // Commands -received by this sketch
 // Add commands retaining the sequential numbering.
@@ -83,7 +90,8 @@ const uint LED_PIN = 25;
 #define STOP_ALL_REPORTS 15
 #define SET_ANALOG_SCANNING_INTERVAL 16
 #define ENABLE_ALL_REPORTS 17
-#define RESET 18
+#define RESET_DATA 18
+#define RESET_BOARD 19
 
 #define MAX_DIGITAL_PINS_SUPPORTED 30
 #define MAX_ANALOG_PINS_SUPPORTED 5
@@ -121,6 +129,8 @@ const uint LED_PIN = 25;
 #define FIRMWARE_MAJOR 0
 #define FIRMWARE_MINOR 1
 
+bool stop_reports = false; // a flag to stop sending all report messages
+
 // a descriptor for digital pins
 typedef struct {
     uint pin_number;
@@ -149,7 +159,7 @@ typedef struct {
 #define MAX_COMMAND_LENGTH 30
 
 // An array of pointers to the command functions
-command_descriptor command_table[19] =
+command_descriptor command_table[20] =
 {
     {&serial_loopback},
     {&set_pin_mode},
@@ -169,7 +179,8 @@ command_descriptor command_table[19] =
     {&stop_all_reports},
     {&set_analog_scanning_interval},
     {&enable_all_reports},
-    {&reset_data}
+    {&reset_data},
+    {&reset_board},
 };
 
 
@@ -185,7 +196,8 @@ void serial_loopback() {
 void set_pin_mode() {
     uint pin;
     uint mode;
-    uint16_t range;
+    //uint16_t range;
+    uint range;
     pwm_config pwm_cfg;
     pin = command_buffer[1];
     mode = command_buffer[2];
@@ -195,7 +207,15 @@ void set_pin_mode() {
         case DIGITAL_INPUT_PULL_UP:
         case DIGITAL_INPUT_PULL_DOWN:
             the_digital_pins[pin].pin_mode = mode;
-            the_digital_pins[pin].reporting_enabled = command_buffer[2];
+            the_digital_pins[pin].reporting_enabled = command_buffer[3];
+            gpio_init(pin);
+            gpio_set_dir(pin, GPIO_IN);
+            if(mode == DIGITAL_INPUT_PULL_UP){
+                gpio_pull_up(pin);
+            }
+            if(mode == DIGITAL_INPUT_PULL_DOWN){
+                gpio_pull_down(pin);
+            }
             break;
         case DIGITAL_OUTPUT:
             the_digital_pins[pin].pin_mode = mode;
@@ -206,7 +226,7 @@ void set_pin_mode() {
             range = (command_buffer[3] << 8) +  command_buffer[4];
             the_digital_pins[pin].pin_mode = mode;
             pwm_cfg = pwm_get_default_config();
-            pwm_config_set_wrap(&pwm_cfg, range);
+            pwm_config_set_wrap(&pwm_cfg, (uint16_t) range);
             pwm_init(pwm_gpio_to_slice_num(pin), &pwm_cfg, true);
             gpio_set_function(pin, GPIO_FUNC_PWM);
             break;
@@ -230,11 +250,11 @@ void digital_write() {
 
 void pwm_write(){
     uint pin;
-    uint16_t value;
+    uint value;
 
     pin = command_buffer[1];
     value = (command_buffer[2] >> 8) + command_buffer[3];
-    pwm_set_gpio_level(pin, value);
+    pwm_set_gpio_level(pin, (uint16_t) value);
 }
 
 void modify_reporting(){
@@ -280,8 +300,20 @@ void get_firmware_version(){
 }
 
 void are_you_there() {
-    int report_message[3] = {2, I_AM_HERE, PICO_ID};
-    serial_write(report_message, 3);
+    // get the unique id
+    pico_unique_board_id_t board_id ;
+    pico_get_unique_board_id(&board_id);
+
+    int report_message[10] = {9, I_AM_HERE, (board_id.id[0]),
+                              board_id.id[1],
+                              board_id.id[2],
+                              board_id.id[3],
+                              board_id.id[4],
+                              board_id.id[5],
+                              board_id.id[6],
+                              board_id.id[7]};
+
+    serial_write(report_message, 10);
 }
 
 void servo_attach() {}
@@ -292,10 +324,22 @@ void i2c_read() {}
 void i2c_write() {}
 void sonar_new() {}
 void dht_new(){}
-void stop_all_reports() {}
 void set_analog_scanning_interval() {}
-void enable_all_reports() {}
 void reset_data() {}
+
+void stop_all_reports()
+{
+    stop_reports = true;
+    sleep_ms(20);
+    stdio_flush ();
+}
+
+void enable_all_reports()
+{
+    stdio_flush ();
+    stop_reports = false;
+    sleep_ms(20);
+}
 
 void get_next_command() {
     int packet_size;
@@ -332,18 +376,56 @@ void get_next_command() {
     }
 }
 
+void scan_digital_inputs()
+{
+    int value;
+
+    // report message
+
+    // index 0 = packet length
+    // index 1 = report type
+    // index 2 = pin number
+    // index 3 = value
+    int report_message[4] = {3, DIGITAL_REPORT, 0, 0};
+
+    for (int i = 0; i < MAX_DIGITAL_PINS_SUPPORTED; i++)
+    {
+        if (the_digital_pins[i].pin_mode == DIGITAL_INPUT ||
+            the_digital_pins[i].pin_mode == DIGITAL_INPUT_PULL_UP ||
+                the_digital_pins[i].pin_mode == DIGITAL_INPUT_PULL_DOWN)
+        {
+            if (the_digital_pins[i].reporting_enabled)
+            {
+                // if the value changed since last read
+                value = gpio_get(the_digital_pins[i].pin_number);
+                if (value != the_digital_pins[i].last_value)
+                {
+                    the_digital_pins[i].last_value = value;
+                    report_message[2] = i;
+                    report_message[3] = (int)value;
+                    serial_write(report_message, 4);
+                }
+            }
+        }
+    }
+}
+
 void serial_write(int *buffer, int num_of_bytes_to_send) {
     for (int i = 0; i < num_of_bytes_to_send; i++) {
         putchar((buffer[i]));
     }
 }
 
-void led_debug(int blinks) {
+void reset_board(){
+    watchdog_reboot(0, 0, 0);
+    watchdog_enable(10, 1);
+}
+void led_debug(int blinks, uint delay) {
     for (int i = 0; i < blinks; i++) {
         gpio_put(LED_PIN, 1);
-        sleep_ms(500);
+        sleep_ms(delay);
         gpio_put(LED_PIN, 0);
-        sleep_ms(500);
+        sleep_ms(delay);
     }
 }
 
@@ -379,8 +461,21 @@ int main() {
     gpio_init(LED_PIN);
     gpio_set_dir(LED_PIN, GPIO_OUT);
 
+    // blink the board LED twice to show that the board is
+    // starting afresh
+    led_debug(2, 250);
+
+
     while (true) {
         get_next_command();
+        if (!stop_reports)
+        {
+            scan_digital_inputs();
+            //scan_analog_inputs();
+            //scan_sonars();
+            //scan_dhts();
+        }
+
 
     }
     return 0;
