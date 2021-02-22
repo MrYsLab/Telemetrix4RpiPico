@@ -20,11 +20,13 @@
  */
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include "pico/stdlib.h"
 #include "hardware/pwm.h"
 #include "pico/unique_id.h"
 #include "hardware/watchdog.h"
+#include "hardware/adc.h"
 
 /************************** FORWARD REFERENCES ***********************
 We define all functions here as extern to provide allow
@@ -69,8 +71,6 @@ extern void dht_new();
 
 extern void stop_all_reports();
 
-extern void set_analog_scanning_interval();
-
 extern void enable_all_reports();
 
 extern void reset_data();
@@ -78,6 +78,8 @@ extern void reset_data();
 extern void reset_board();
 
 extern void scan_digital_inputs();
+
+extern void scan_analog_inputs();
 
 
 
@@ -104,10 +106,9 @@ extern void scan_digital_inputs();
 #define SONAR_NEW 13
 #define DHT_NEW 14
 #define STOP_ALL_REPORTS 15
-#define SET_ANALOG_SCANNING_INTERVAL 16
-#define ENABLE_ALL_REPORTS 17
-#define RESET_DATA 18
-#define RESET_BOARD 19
+#define ENABLE_ALL_REPORTS 16
+#define RESET_DATA 17
+#define RESET_BOARD 18
 
 /******************************************************
  *                 PIN MODE DEFINITIONS
@@ -127,7 +128,7 @@ extern void scan_digital_inputs();
 #define DIGITAL_REPORT DIGITAL_WRITE
 #define ANALOG_REPORT 3
 #define FIRMWARE_REPORT 5
-#define I_AM_HERE 6
+#define REPORT_PICO_UNIQUE_ID 6
 #define SERVO_UNAVAILABLE 7 // for the future
 #define I2C_TOO_FEW_BYTES_RCVD 8 // for the future
 #define I2C_TOO_MANY_BYTES_RCVD 9 // for the future
@@ -171,8 +172,15 @@ typedef struct {
 // an array of digital_pin_descriptors
 pin_descriptor the_digital_pins[MAX_DIGITAL_PINS_SUPPORTED];
 
+// a descriptor for analog pins
+typedef struct analog_pin_descriptor {
+    uint reporting_enabled; // If true, then send reports if an input pin
+    int last_value;         // Last value read for input mode
+    int differential;       // difference between current and last value needed
+} analog_pin_descriptor;
+
 // an array of analog_pin_descriptors
-pin_descriptor the_analog_pins[MAX_ANALOG_PINS_SUPPORTED];
+analog_pin_descriptor the_analog_pins[MAX_ANALOG_PINS_SUPPORTED];
 
 // When adding a new command update the command_table.
 // The command length is the number of bytes that follow
@@ -212,7 +220,6 @@ command_descriptor command_table[20] =
                 {&sonar_new},
                 {&dht_new},
                 {&stop_all_reports},
-                {&set_analog_scanning_interval},
                 {&enable_all_reports},
                 {&reset_data},
                 {&reset_board},
@@ -304,8 +311,13 @@ void set_pin_mode() {
             break;
 
         case ANALOG_INPUT:
-            the_analog_pins[pin].pin_mode = mode;
-            the_analog_pins[pin].reporting_enabled = command_buffer[2];
+            //if the temp sensor was selected, then turn it on
+            if (pin == 4) {
+                adc_set_temp_sensor_enabled(true);
+            }
+            the_analog_pins[pin].reporting_enabled = command_buffer[5];
+            // save the differential value
+            the_analog_pins[pin].differential = (int) ((command_buffer[3] << 8) + command_buffer[4]);
             break;
         default:
             break;
@@ -352,14 +364,10 @@ void modify_reporting() {
             }
             break;
         case REPORTING_ANALOG_ENABLE:
-            if (the_analog_pins[pin].pin_mode != PIN_MODE_NOT_SET) {
-                the_analog_pins[pin].reporting_enabled = true;
-            }
+            the_analog_pins[pin].reporting_enabled = true;
             break;
         case REPORTING_ANALOG_DISABLE:
-            if (the_analog_pins[pin].pin_mode != PIN_MODE_NOT_SET) {
-                the_analog_pins[pin].reporting_enabled = false;
-            }
+            the_analog_pins[pin].reporting_enabled = false;
             break;
         case REPORTING_DIGITAL_ENABLE:
             if (the_digital_pins[pin].pin_mode != PIN_MODE_NOT_SET) {
@@ -392,7 +400,7 @@ void get_pico_unique_id() {
     pico_unique_board_id_t board_id;
     pico_get_unique_board_id(&board_id);
 
-    int report_message[10] = {9, I_AM_HERE, (board_id.id[0]),
+    int report_message[10] = {9, REPORT_PICO_UNIQUE_ID, (board_id.id[0]),
                               board_id.id[1],
                               board_id.id[2],
                               board_id.id[3],
@@ -446,8 +454,6 @@ void i2c_write() {}
 void sonar_new() {}
 
 void dht_new() {}
-
-void set_analog_scanning_interval() {}
 
 void reset_data() {}
 
@@ -526,6 +532,40 @@ void scan_digital_inputs() {
     }
 }
 
+void scan_analog_inputs() {
+    uint16_t value;
+
+    // report message
+
+    // byte 0 = packet length
+    // byte 1 = report type
+    // byte 2 = pin number
+    // byte 3 = high order byte of value
+    // byte 4 = low order byte of value
+
+    int report_message[5] = {4, ANALOG_REPORT, 0, 0, 0};
+    int differential;
+
+
+    for (uint8_t i = 0; i < MAX_ANALOG_PINS_SUPPORTED; i++) {
+        if (the_analog_pins[i].reporting_enabled) {
+            adc_select_input(i);
+            value = adc_read();
+            differential = abs(value - the_analog_pins[i].last_value);
+            if (differential >= the_analog_pins[i].differential) {
+                //trigger value achieved, send out the report
+                the_analog_pins[i].last_value = value;
+                // input_message[1] = the_analog_pins[i].pin_number;
+                report_message[2] = (uint8_t) i;
+                report_message[3] = value >> 8;
+                report_message[4] = value & 0x00ff;
+                serial_write(report_message, 5);
+            }
+        }
+    }
+}
+
+
 /*************************************************
  * Write data to serial interface
  * @param buffer
@@ -543,7 +583,7 @@ void serial_write(int *buffer, int num_of_bytes_to_send) {
 
 int main() {
     stdio_init_all();
-
+    adc_init();
     // create an array of pin_descriptors for 100 pins
     // establish the digital pin array
     for (uint8_t i = 0; i < MAX_DIGITAL_PINS_SUPPORTED; i++) {
@@ -555,8 +595,6 @@ int main() {
 
     // establish the analog pin array
     for (uint8_t i = 0; i < MAX_ANALOG_PINS_SUPPORTED; i++) {
-        the_analog_pins[i].pin_number = i;
-        the_analog_pins[i].pin_mode = PIN_MODE_NOT_SET;
         the_analog_pins[i].reporting_enabled = false;
         the_analog_pins[i].last_value = 0;
     }
@@ -573,7 +611,7 @@ int main() {
         get_next_command();
         if (!stop_reports) {
             scan_digital_inputs();
-            //scan_analog_inputs();
+            scan_analog_inputs();
             //scan_sonars();
             //scan_dhts();
         }
