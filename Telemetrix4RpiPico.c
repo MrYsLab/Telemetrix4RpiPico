@@ -1,5 +1,5 @@
 //
-// Created by afy on 2/18/21.
+// Created by afy on 2/18/21.f
 //
 
 /********************************************************
@@ -27,6 +27,7 @@
 #include "pico/unique_id.h"
 #include "hardware/watchdog.h"
 #include "hardware/adc.h"
+#include "hardware/i2c.h"
 
 /************************** FORWARD REFERENCES ***********************
 We define all functions here as extern to provide allow
@@ -110,6 +111,38 @@ extern void scan_analog_inputs();
 #define RESET_DATA 17
 #define RESET_BOARD 18
 
+/*****************************************************
+ *                  MESSAGE OFFSETS
+ ***************************************************/
+// i2c_common
+#define I2C_PORT 1
+#define I2C_DEVICE_ADDRESS 2 // read and write
+
+// i2c_init
+#define I2C_SDA_GPIO_PIN 2
+#define I2C_SCL_GPIO_PIN 3
+
+// i2c_read
+#define I2C_READ_REGISTER 3
+#define I2C_READ_LENGTH 4
+#define I2C_READ_NO_STOP_FLAG 5
+
+// I2c_write
+#define I2C_WRITE_NUMBER_OF_BYTES 3
+#define I2C_WRITE_NO_STOP_FLAG 4
+#define I2C_WRITE_BYTES_TO_WRITE 5
+
+// This defines how many bytes there are
+// that precede the first byte read position
+// in the i2c report message buffer.
+#define I2C_READ_DATA_BASE_BYTES 5
+
+// Start of i2c data read within the message buffer
+#define I2C_READ_START_OF_DATA 6
+
+// Indicator that no i2c register is being specified in the command
+#define I2C_NO_REGISTER 254
+
 /******************************************************
  *                 PIN MODE DEFINITIONS
  *****************************************************/
@@ -130,9 +163,9 @@ extern void scan_analog_inputs();
 #define FIRMWARE_REPORT 5
 #define REPORT_PICO_UNIQUE_ID 6
 #define SERVO_UNAVAILABLE 7 // for the future
-#define I2C_TOO_FEW_BYTES_RCVD 8 // for the future
-#define I2C_TOO_MANY_BYTES_RCVD 9 // for the future
-#define I2C_READ_REPORT 10 // for the future
+#define I2C_WRITE_FAILED 8
+#define I2C_READ_FAILED 9
+#define I2C_READ_REPORT 10
 #define SONAR_DISTANCE 11 // for the future
 #define DEBUG_PRINT 99
 
@@ -157,7 +190,10 @@ const uint LED_PIN = 25; // board LED
 
 /* Firmware Version Values */
 #define FIRMWARE_MAJOR 0
-#define FIRMWARE_MINOR 1
+#define FIRMWARE_MINOR 2
+
+// Indicator that no i2c register is being specified in the command
+#define I2C_NO_REGISTER_SPECIFIED 254
 
 bool stop_reports = false; // a flag to stop sending all report messages
 
@@ -196,7 +232,11 @@ typedef struct {
 #define MAX_COMMAND_LENGTH 30
 
 // buffer to hold incoming command data
-uint command_buffer[MAX_COMMAND_LENGTH];
+uint8_t command_buffer[MAX_COMMAND_LENGTH];
+
+// A buffer to hold i2c report data
+//int i2c_report_message[64];
+
 
 /*****************************************************************
  *                   THE COMMAND TABLE
@@ -438,18 +478,145 @@ void reset_board() {
     watchdog_enable(10, 1);
 }
 
+void i2c_begin() {
+    // get the GPIO pins associated with this i2c instance
+    uint sda_gpio = command_buffer[I2C_SDA_GPIO_PIN];
+    uint scl_gpio = command_buffer[I2C_SCL_GPIO_PIN];
+
+    //send_debug_info(command_buffer[I2C_PORT], command_buffer[I2C_SDA_GPIO_PIN]);
+    //send_debug_info(command_buffer[I2C_PORT], command_buffer[I2C_SCL_GPIO_PIN]);
+
+    // set the i2c instance - 0 or 1
+    if (command_buffer[I2C_PORT] == 0) {
+        i2c_init(i2c0, 100 * 1000);
+    } else {
+        i2c_init(i2c1, 100 * 1000);
+    }
+    gpio_set_function(sda_gpio, GPIO_FUNC_I2C);
+    gpio_set_function(scl_gpio, GPIO_FUNC_I2C);
+    gpio_pull_up(sda_gpio);
+    gpio_pull_up(scl_gpio);
+}
+
+void i2c_read() {
+
+    // The report_message offsets:
+    // 0 = packet length - this must be calculated
+    // 1 = I2C_READ_REPORT
+    // 2 = The i2c port - 0 or 1
+    // 3 = i2c device address
+    // 4 = i2c read register
+    // 5 = number of bytes read
+    // 6... = bytes read
+
+    // Allocate storage for the report.
+    // This is a variable amount based on the amount of data
+    // to be read.
+    int i2c_read_report_message[I2C_READ_DATA_BASE_BYTES + command_buffer[I2C_READ_LENGTH]];
+    int num_of_bytes_to_send = I2C_READ_DATA_BASE_BYTES + command_buffer[I2C_READ_LENGTH] + 1;
+
+    // We have a separate buffer ot store the data read from the device
+    // and combine that data back into the i2c report buffer.
+    // This gets around casting.
+    uint8_t data_from_device[command_buffer[I2C_READ_LENGTH]];
+
+    // return value from write and read i2c sdk commands
+    int i2c_sdk_call_return_value;
+
+    // selector for i2c0 or i2c1
+    i2c_inst_t *i2c;
+
+    // Determine the i2c port to use.
+    if (command_buffer[I2C_PORT]) {
+        i2c = i2c1;
+    } else {
+        i2c = i2c0;
+    }
+
+    // If there is an i2c register specified, set the register pointer
+    if (command_buffer[I2C_READ_NO_STOP_FLAG] != I2C_NO_REGISTER_SPECIFIED) {
+        i2c_sdk_call_return_value = i2c_write_blocking(i2c,
+                                                       (uint8_t) command_buffer[I2C_DEVICE_ADDRESS],
+                                                       (const uint8_t *) &command_buffer[I2C_READ_REGISTER], 1,
+                                                       (bool) command_buffer[I2C_READ_NO_STOP_FLAG]);
+        if (i2c_sdk_call_return_value == PICO_ERROR_GENERIC) {
+            int i2c_error_report_message[5] = {4, I2C_WRITE_FAILED, 2,
+                                               command_buffer[I2C_PORT],
+                                               command_buffer[I2C_DEVICE_ADDRESS]};
+            serial_write(i2c_error_report_message, 5);
+            return;
+        }
+    }
+    // now do the read request
+    i2c_sdk_call_return_value = i2c_read_blocking(i2c,
+                                                  (uint8_t) command_buffer[I2C_DEVICE_ADDRESS],
+                                                  data_from_device,
+            //data_from_device,
+                                                  (size_t) (command_buffer[I2C_READ_LENGTH]),
+                                                  (bool) command_buffer[I2C_READ_NO_STOP_FLAG]);
+    if (i2c_sdk_call_return_value == PICO_ERROR_GENERIC) {
+        int i2c_error_report_message[5] = {4, I2C_READ_FAILED, 2, command_buffer[I2C_PORT],
+                                           command_buffer[I2C_DEVICE_ADDRESS]};
+        serial_write(i2c_error_report_message, 5);
+    }
+
+    // copy the data returned from i2c device into the report message buffer
+    for (uint i = 0; i < i2c_sdk_call_return_value; i++) {
+        i2c_read_report_message[i + I2C_READ_START_OF_DATA] = data_from_device[i];
+    }
+    // length of the packet
+    i2c_read_report_message[0] = (uint8_t) (i2c_sdk_call_return_value + I2C_READ_DATA_BASE_BYTES);
+
+    i2c_read_report_message[1] = I2C_READ_REPORT;
+
+    // i2c_port
+    i2c_read_report_message[2] = command_buffer[I2C_PORT];
+
+    // i2c_address
+    i2c_read_report_message[3] = command_buffer[I2C_DEVICE_ADDRESS];
+
+    // i2c register
+    i2c_read_report_message[4] = command_buffer[I2C_READ_REGISTER];
+
+    // number of bytes read from i2c device
+    i2c_read_report_message[5] = (uint8_t) i2c_sdk_call_return_value;
+
+    serial_write((int *) i2c_read_report_message, num_of_bytes_to_send);
+
+}
+
+void i2c_write() {
+    // i2c instance pointer
+    i2c_inst_t *i2c;
+
+    // return value from sdk write
+    int command_return_value;
+
+    // Determine the i2c port to use.
+    if (command_buffer[I2C_PORT]) {
+        i2c = i2c1;
+    } else {
+        i2c = i2c0;
+    }
+
+    command_return_value = i2c_write_blocking(i2c, (uint8_t) command_buffer[I2C_DEVICE_ADDRESS],
+                                              &(command_buffer[I2C_WRITE_BYTES_TO_WRITE]),
+                                              command_buffer[I2C_WRITE_NUMBER_OF_BYTES],
+                                              (bool) command_buffer[I2C_WRITE_NO_STOP_FLAG]);
+
+    if (command_return_value == PICO_ERROR_GENERIC) {
+        int report_message[4] = {3, I2C_WRITE_FAILED, 1, command_buffer[I2C_PORT]};
+        serial_write(report_message, 4);
+        return;
+    }
+}
+
 /******************* FOR FUTURE RELEASES **********************/
 void servo_attach() {}
 
 void servo_write() {}
 
 void servo_detach() {}
-
-void i2c_begin() {}
-
-void i2c_read() {}
-
-void i2c_write() {}
 
 void sonar_new() {}
 
@@ -466,7 +633,7 @@ void reset_data() {}
  */
 void get_next_command() {
     int packet_size;
-    int packet_data;
+    uint8_t packet_data;
     command_descriptor command_entry;
 
     // clear the command buffer for the new incoming command
@@ -481,10 +648,10 @@ void get_next_command() {
     } else {
         // get the rest of the packet
         for (int i = 0; i < packet_size; i++) {
-            if ((packet_data = getchar_timeout_us(0)) == PICO_ERROR_TIMEOUT) {
+            if ((packet_data = (uint8_t) getchar_timeout_us(0)) == PICO_ERROR_TIMEOUT) {
                 sleep_ms(1);
             }
-            command_buffer[i] = (uint) packet_data;
+            command_buffer[i] = packet_data;
         }
         // the first byte is the command ID.
         // look up the function and execute it.
@@ -573,8 +740,10 @@ void scan_analog_inputs() {
  */
 void serial_write(int *buffer, int num_of_bytes_to_send) {
     for (int i = 0; i < num_of_bytes_to_send; i++) {
-        putchar((buffer[i]));
+        putchar((buffer[i]) & 0x00ff);
     }
+    stdio_flush();
+
 }
 
 /***************************************************************
@@ -583,6 +752,10 @@ void serial_write(int *buffer, int num_of_bytes_to_send) {
 
 int main() {
     stdio_init_all();
+    stdio_set_translate_crlf(&stdio_usb, false);
+    stdio_flush();
+
+    //stdio_set_translate_crlf(&stdio_usb, false);
     adc_init();
     // create an array of pin_descriptors for 100 pins
     // establish the digital pin array
