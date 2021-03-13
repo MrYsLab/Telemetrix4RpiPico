@@ -21,15 +21,7 @@
 
 #pragma clang diagnostic push
 #pragma ide diagnostic ignored "EndlessLoop"
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include "pico/stdlib.h"
-#include "hardware/pwm.h"
-#include "pico/unique_id.h"
-#include "hardware/watchdog.h"
-#include "hardware/adc.h"
-#include "hardware/i2c.h"
+
 #include "include/Telemetrix4RpiPico.h"
 
 /*******************************************************************
@@ -48,6 +40,30 @@ analog_pin_descriptor the_analog_pins[MAX_ANALOG_PINS_SUPPORTED];
 
 // buffer to hold incoming command data
 uint8_t command_buffer[MAX_COMMAND_LENGTH];
+
+// neopixel support
+PIO pio = pio0;
+uint sm = 0;
+
+// neopixel storage for up to 150 pixel string
+// Each entry contains an RGG array.
+
+uint8_t pixel_buffer[MAXIMUM_NUM_NEOPIXELS][3];
+
+uint actual_number_of_pixels;
+
+static inline void put_pixel(uint32_t pixel_grb) {
+    pio_sm_put_blocking(pio0, 0, pixel_grb << 8u);
+
+}
+
+static inline uint32_t urgb_u32(uint8_t r, uint8_t g, uint8_t b) {
+    return
+            ((uint32_t) (r) << 8) |
+            ((uint32_t) (g) << 16) |
+            (uint32_t) (b);
+}
+
 
 
 /******************* REPORT BUFFERS *******************/
@@ -69,7 +85,7 @@ int i2c_report_message[64];
 
 // get_pico_unique_id report buffer
 int unique_id_report_report_message[] = {9, REPORT_PICO_UNIQUE_ID,
-                                           0, 0, 0, 0, 0, 0, 0, 0 };
+                                         0, 0, 0, 0, 0, 0, 0, 0};
 // digital input report buffer
 int digital_input_report_message[] = {3, DIGITAL_REPORT, 0, 0};
 
@@ -107,6 +123,11 @@ command_descriptor command_table[] =
                 {&enable_all_reports},
                 {&reset_data},
                 {&reset_board},
+                {&init_neo_pixels},
+                {&show_neo_pixels},
+                {&set_neo_pixel},
+                {&clear_all_neo_pixels},
+                {&fill_neo_pixels}
         };
 
 /***************************************************************************
@@ -204,7 +225,7 @@ void set_pin_mode() {
             // save the differential value
             the_analog_pins[pin].differential =
                     (int) ((command_buffer[SET_PIN_MODE_ANALOG_DIFF_HIGH] << 8) +
-                    command_buffer[SET_PIN_MODE_ANALOG_DIFF_LOW]);
+                           command_buffer[SET_PIN_MODE_ANALOG_DIFF_LOW]);
             break;
         default:
             break;
@@ -276,7 +297,6 @@ void modify_reporting() {
  * Retrieve the current firmware version
  */
 void get_firmware_version() {
-    send_debug_info(1,sizeof(firmware_report_message) / sizeof(int));
     serial_write(firmware_report_message,
                  sizeof(firmware_report_message) / sizeof(int));
 }
@@ -355,7 +375,7 @@ void i2c_read() {
     // 6... = bytes read
 
     // length of i2c report packet
-    int num_of_bytes_to_send = I2C_READ_START_OF_DATA + command_buffer[I2C_READ_LENGTH] ;
+    int num_of_bytes_to_send = I2C_READ_START_OF_DATA + command_buffer[I2C_READ_LENGTH];
 
     // We have a separate buffer ot store the data read from the device
     // and combine that data back into the i2c report buffer.
@@ -381,7 +401,7 @@ void i2c_read() {
                                                        (uint8_t) command_buffer[I2C_DEVICE_ADDRESS],
                                                        (const uint8_t *) &command_buffer[I2C_READ_REGISTER], 1,
                                                        (bool) command_buffer[I2C_READ_NO_STOP_FLAG]);
-        if (i2c_sdk_call_return_value == PICO_ERROR_GENERIC){
+        if (i2c_sdk_call_return_value == PICO_ERROR_GENERIC) {
             return;
         }
     }
@@ -408,7 +428,7 @@ void i2c_read() {
     }
     // length of the packet
     i2c_report_message[I2C_PACKET_LENGTH] = (uint8_t) (i2c_sdk_call_return_value +
-            I2C_READ_DATA_BASE_BYTES);
+                                                       I2C_READ_DATA_BASE_BYTES);
 
     i2c_report_message[I2C_REPORT_ID] = I2C_READ_REPORT;
 
@@ -440,9 +460,9 @@ void i2c_write() {
     }
 
     int i2c_sdk_call_return_value = i2c_write_blocking(i2c, (uint8_t) command_buffer[I2C_DEVICE_ADDRESS],
-                                              &(command_buffer[I2C_WRITE_BYTES_TO_WRITE]),
-                                              command_buffer[I2C_WRITE_NUMBER_OF_BYTES],
-                                              (bool) command_buffer[I2C_WRITE_NO_STOP_FLAG]);
+                                                       &(command_buffer[I2C_WRITE_BYTES_TO_WRITE]),
+                                                       command_buffer[I2C_WRITE_NUMBER_OF_BYTES],
+                                                       (bool) command_buffer[I2C_WRITE_NO_STOP_FLAG]);
 
     if (i2c_sdk_call_return_value == PICO_ERROR_GENERIC) {
         i2c_report_message[I2C_PACKET_LENGTH] = I2C_ERROR_REPORT_LENGTH; // length of the packet
@@ -452,6 +472,69 @@ void i2c_write() {
 
         serial_write(i2c_report_message, I2C_ERROR_REPORT_NUM_OF_BYTE_TO_SEND);
         return;
+    }
+}
+
+void init_neo_pixels() {
+    // initialize the pico support a NeoPixel string
+    uint offset = pio_add_program(pio, &Telemetrix4RpiPico_program);
+    ws2812_init(pio, sm, offset, command_buffer[NP_PIN_NUMBER], 800000,
+                false);
+
+    actual_number_of_pixels = command_buffer[NP_NUMBER_OF_PIXELS];
+
+    // set the pixels to the fill color
+    for (int i = 0; i < actual_number_of_pixels; i++) {
+        pixel_buffer[i][RED] = command_buffer[NP_RED_FILL];
+        pixel_buffer[i][GREEN] = command_buffer[NP_GREEN_FILL];
+        pixel_buffer[i][BLUE] = command_buffer[NP_BLUE_FILL];
+    }
+    show_neo_pixels();
+    sleep_ms(1);
+
+}
+
+void set_neo_pixel(){
+    // set a single neopixel in the pixel buffer
+    pixel_buffer[command_buffer[NP_PIXEL_NUMBER]][RED] = command_buffer[NP_SET_RED];
+    pixel_buffer[command_buffer[NP_PIXEL_NUMBER]][GREEN] = command_buffer[NP_SET_GREEN];
+    pixel_buffer[command_buffer[NP_PIXEL_NUMBER]][BLUE] = command_buffer[NP_SET_BLUE];
+    if(command_buffer[NP_SET_AUTO_SHOW]) {
+        show_neo_pixels();
+    }
+}
+
+void show_neo_pixels() {
+    // show the neopixels in the buffer
+    for(int i=0; i < actual_number_of_pixels; i++) {
+        put_pixel(urgb_u32(pixel_buffer[i][RED],
+                           pixel_buffer[i][GREEN],
+                           pixel_buffer[i][BLUE]));
+    }
+}
+
+void clear_all_neo_pixels(){
+    // set all the neopixels in the buffer to all zeroes
+    for(int i=0; i < actual_number_of_pixels; i++) {
+        pixel_buffer[i][RED] = 0;
+        pixel_buffer[i][GREEN] = 0;
+        pixel_buffer[i][BLUE] = 0;
+    }
+    if(command_buffer[NP_CLEAR_AUTO_SHOW]) {
+        show_neo_pixels();
+    }
+}
+
+void fill_neo_pixels(){
+    // fill all the neopixels in the buffer with the
+    // specified rgb values.
+    for(int i=0; i < actual_number_of_pixels; i++) {
+        pixel_buffer[i][RED] = command_buffer[NP_FILL_RED];
+        pixel_buffer[i][GREEN] = command_buffer[NP_FILL_GREEN];
+        pixel_buffer[i][BLUE] = command_buffer[NP_FILL_BLUE];
+    }
+    if(command_buffer[NP_FILL_AUTO_SHOW]) {
+        show_neo_pixels();
     }
 }
 
@@ -595,6 +678,9 @@ int main() {
     stdio_init_all();
     stdio_set_translate_crlf(&stdio_usb, false);
     stdio_flush();
+    //uint offset = pio_add_program(pio, &Telemetrix4RpiPico_program);
+    //ws2812_init(pio, sm, offset, 28, 800000,
+    //            false);
 
     //stdio_set_translate_crlf(&stdio_usb, false);
     adc_init();
@@ -633,8 +719,6 @@ int main() {
 
     }
 }
-
-
 
 
 #pragma clang diagnostic pop

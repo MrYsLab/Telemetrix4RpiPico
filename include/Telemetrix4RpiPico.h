@@ -4,6 +4,21 @@
 
 #ifndef TELEMETRIX4RPIPICO_TELEMETRIX4RPIPICO_H
 #define TELEMETRIX4RPIPICO_TELEMETRIX4RPIPICO_H
+
+#pragma clang diagnostic push
+#pragma ide diagnostic ignored "EndlessLoop"
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include "pico/stdlib.h"
+#include "hardware/pwm.h"
+#include "pico/unique_id.h"
+#include "hardware/watchdog.h"
+#include "hardware/adc.h"
+#include "hardware/i2c.h"
+#include "hardware/pio.h"
+#include "hardware/clocks.h"
+#include "ws2812.pio.h"
 /************************** FORWARD REFERENCES ***********************
 We define all functions here as extern to provide allow
 forward referencing.
@@ -57,6 +72,16 @@ extern void scan_digital_inputs();
 
 extern void scan_analog_inputs();
 
+extern void init_neo_pixels();
+
+extern void show_neo_pixels();
+
+extern void set_neo_pixel();
+
+extern void clear_all_neo_pixels();
+
+extern void fill_neo_pixels();
+
 
 
 /*********************************************************
@@ -85,6 +110,11 @@ extern void scan_analog_inputs();
 #define ENABLE_ALL_REPORTS 16
 #define RESET_DATA 17
 #define RESET_BOARD 18
+#define INITIALIZE_NEO_PIXELS 19
+#define SHOW_NEO_PIXELS 20
+#define SET_NEO_PIXEL 21
+#define CLEAR_ALL_NEO_PIXELS 22
+#define FILL_NEO_PIXELS 23
 
 /*****************************************************
  *                  MESSAGE OFFSETS
@@ -167,7 +197,40 @@ extern void scan_analog_inputs();
 #define I2C_ERROR_REPORT_LENGTH 4
 #define I2C_ERROR_REPORT_NUM_OF_BYTE_TO_SEND 5
 
+// init neopixels
+// command offsets
+#define NP_PIN_NUMBER 1
+#define NP_NUMBER_OF_PIXELS 2
+#define NP_RED_FILL 3
+#define NP_GREEN_FILL 4
+#define NP_BLUE_FILL 5
 
+
+// NeoPixel clock frequency
+#define NP_FREQUENCY 800000
+
+// Pixel buffer array offsets
+#define RED 0
+#define GREEN 1
+#define BLUE 2
+
+// set_neo_pixel command offsets
+#define NP_PIXEL_NUMBER 1
+#define NP_SET_RED 2
+#define NP_SET_GREEN 3
+#define NP_SET_BLUE 4
+#define NP_SET_AUTO_SHOW 5
+
+// fill_neo_pixels command offsets
+#define NP_FILL_RED 1
+#define NP_FILL_GREEN 2
+#define NP_FILL_BLUE 3
+#define NP_FILL_AUTO_SHOW 4
+
+// clear_all_neo_pixels command offsets
+#define NP_CLEAR_AUTO_SHOW 1
+
+#define MAXIMUM_NUM_NEOPIXELS 150
 
 /*********************** REPORTING BUFFER OFFSETS ******************/
 // loopback buffer offset for data being looped back
@@ -229,7 +292,7 @@ extern void scan_analog_inputs();
 
 /* Firmware Version Values */
 #define FIRMWARE_MAJOR 0
-#define FIRMWARE_MINOR 2
+#define FIRMWARE_MINOR 3
 
 // maximum length of a command packet in bytes
 #define MAX_COMMAND_LENGTH 30
