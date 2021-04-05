@@ -64,7 +64,8 @@ static inline uint32_t urgb_u32(uint8_t r, uint8_t g, uint8_t b) {
             (uint32_t) (b);
 }
 
-
+// PWM values
+uint32_t top;
 
 /******************* REPORT BUFFERS *******************/
 // NOTE First value in the array is the number of reporting
@@ -181,8 +182,6 @@ void led_debug(int blinks, uint delay) {
 void set_pin_mode() {
     uint pin;
     uint mode;
-    uint range;
-    pwm_config pwm_cfg;
     pin = command_buffer[SET_PIN_MODE_GPIO_PIN];
     mode = command_buffer[SET_PIN_MODE_MODE_TYPE];
 
@@ -207,12 +206,27 @@ void set_pin_mode() {
             gpio_set_dir(pin, GPIO_OUT);
             break;
         case PWM_OUTPUT:
-            range = (command_buffer[SET_PIN_MODE_PWM_HIGH_VALUE] << 8) +
-                    command_buffer[SET_PIN_MODE_PWM_LOW_VALUE];
+            /* Here we will set the operating frequency to be 50 hz to
+               simplify support PWM as well as servo support.
+            */
             the_digital_pins[pin].pin_mode = mode;
-            pwm_cfg = pwm_get_default_config();
-            pwm_config_set_wrap(&pwm_cfg, (uint16_t) range);
-            pwm_init(pwm_gpio_to_slice_num(pin), &pwm_cfg, true);
+
+            const uint32_t f_hz = 50; // frequency in hz.
+
+            uint slice_num = pwm_gpio_to_slice_num(pin); // get PWM slice for the pin
+
+            // set frequency
+            // determine top given Hz using the free-running clock
+            uint32_t f_sys = clock_get_hz(clk_sys);
+            float divider = (float)(f_sys / 1000000UL);  // run the pwm clock at 1MHz
+            pwm_set_clkdiv(slice_num, divider); // pwm clock should now be running at 1MHz
+            top =  1000000UL/f_hz -1; // calculate the TOP value
+            pwm_set_wrap(slice_num, (uint16_t)top);
+
+            // set the current level to 0
+            pwm_set_gpio_level(pin, 0);
+
+            pwm_set_enabled(slice_num, true); // let's go!
             gpio_set_function(pin, GPIO_FUNC_PWM);
             break;
 
@@ -248,13 +262,13 @@ void digital_write() {
  */
 void pwm_write() {
     uint pin;
-    uint value;
+    uint16_t value;
 
     pin = command_buffer[PWM_WRITE_GPIO_PIN];
-    // the value may be up to 16 bits in length
-    value = (command_buffer[PWM_WRITE_HIGH_VALUE] >> 8) +
-            command_buffer[PWM_WRITE_LOW_VALUE];
-    pwm_set_gpio_level(pin, (uint16_t) value);
+
+    value = ( command_buffer[SET_PIN_MODE_PWM_HIGH_VALUE] << 8) +
+              command_buffer[SET_PIN_MODE_PWM_LOW_VALUE];
+    pwm_set_gpio_level(pin, value);
 }
 
 /***************************************************
@@ -539,17 +553,20 @@ void fill_neo_pixels(){
 }
 
 /******************* FOR FUTURE RELEASES **********************/
-void servo_attach() {}
 
-void servo_write() {}
-
-void servo_detach() {}
 
 void sonar_new() {}
 
 void dht_new() {}
 
 void reset_data() {}
+
+/***************** Currently Unused ***************************/
+void servo_attach() {}
+
+void servo_write() {}
+
+void servo_detach() {}
 
 /******************************************************
  *             INTERNALLY USED FUNCTIONS

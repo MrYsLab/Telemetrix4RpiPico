@@ -6,23 +6,24 @@ add_executable(Telemetrix4RpiPico
         Telemetrix4RpiPico.c
 )
 
-pico_generate_pio_header(Telemetrix4RpiPico ${CMAKE_CURRENT_LIST_DIR}/ws2812.pio)
+pico_generate_pio_header(Telemetrix4RpiPico ${CMAKE_CURRENT_LIST_DIR}/ws2812.pio ${CMAKE_CURRENT_LIST_DIR}/servo.pio)
 pico_enable_stdio_usb(Telemetrix4RpiPico 1)
 pico_add_extra_outputs(Telemetrix4RpiPico)
 target_link_libraries(Telemetrix4RpiPico pico_stdlib hardware_pwm
         pico_unique_id hardware_watchdog hardware_adc hardware_i2c
-        hardware_pio)
+        hardware_pio hardware_clocks)
 
 add_executable(pio_Telemetrix4RpiPico)
 # generate the header file into the source tree as it is included in the RP2040 datasheet
-pico_generate_pio_header(pio_Telemetrix4RpiPico ${CMAKE_CURRENT_LIST_DIR}/ws2812.pio OUTPUT_DIR ${CMAKE_CURRENT_LIST_DIR}/generated)
+pico_generate_pio_header(pio_Telemetrix4RpiPico ${CMAKE_CURRENT_LIST_DIR}/ws2812.pio
+        ${CMAKE_CURRENT_LIST_DIR}/servo.pio OUTPUT_DIR ${CMAKE_CURRENT_LIST_DIR}/generated)
 
 target_sources(pio_Telemetrix4RpiPico PRIVATE Telemetrix4RpiPico.c)
 pico_add_extra_outputs(pio_Telemetrix4RpiPico)
 
 add_custom_target(pio_Telemetrix4RpiPico_datasheet DEPENDS ${CMAKE_CURRENT_LIST_DIR}/generated/Telemetrix4RpiPico.py)
 add_custom_command(OUTPUT ${CMAKE_CURRENT_LIST_DIR}/generated/Telemetrix4RpiPico.py
-        DEPENDS ws2812.pio
-        COMMAND Pioasm -o python ws2812.pio ./generated/Telemetrix4RpiPico
+        DEPENDS ws2812.pio servo.pio
+        COMMAND Pioasm -o python ws2812.pio servo.pio./generated/Telemetrix4RpiPico
         )
 add_dependencies(pio_Telemetrix4RpiPico pio_Telemetrix4RpiPico_datasheet)

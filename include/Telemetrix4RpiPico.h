@@ -160,8 +160,8 @@ extern void fill_neo_pixels();
 #define SET_PIN_MODE_DIGITAL_IN_REPORTING_STATE 3
 
 // set pin mode PWM output input command offsets
-#define SET_PIN_MODE_PWM_HIGH_VALUE 3
-#define SET_PIN_MODE_PWM_LOW_VALUE 4
+#define SET_PIN_MODE_PWM_HIGH_VALUE 2
+#define SET_PIN_MODE_PWM_LOW_VALUE 3
 
 // ADC number for temperature sensor
 #define ADC_TEMPERATURE_REGISTER 4
