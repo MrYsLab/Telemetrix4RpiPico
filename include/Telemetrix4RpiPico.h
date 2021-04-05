@@ -292,7 +292,7 @@ extern void fill_neo_pixels();
 
 /* Firmware Version Values */
 #define FIRMWARE_MAJOR 0
-#define FIRMWARE_MINOR 3
+#define FIRMWARE_MINOR 4
 
 // maximum length of a command packet in bytes
 #define MAX_COMMAND_LENGTH 30
