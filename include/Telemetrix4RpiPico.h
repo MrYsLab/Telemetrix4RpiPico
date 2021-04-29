@@ -18,7 +18,9 @@
 #include "hardware/i2c.h"
 #include "hardware/pio.h"
 #include "hardware/clocks.h"
-#include "ws2812.pio.h"
+#include "Telemetrix4RpiPico.pio.h"
+#include "math.h"
+
 /************************** FORWARD REFERENCES ***********************
 We define all functions here as extern to provide allow
 forward referencing.
@@ -52,7 +54,7 @@ extern void i2c_write();
 
 extern void sonar_new();
 
-extern void serial_write(int *buffer, int num_of_bytes_to_send);
+extern void serial_write(const int *buffer, int num_of_bytes_to_send);
 
 extern void led_debug(int blinks, uint delay);
 
@@ -82,6 +84,10 @@ extern void clear_all_neo_pixels();
 
 extern void fill_neo_pixels();
 
+extern void read_sonar(uint);
+
+extern void read_dht(uint);
+
 
 
 /*********************************************************
@@ -98,9 +104,9 @@ extern void fill_neo_pixels();
 #define MODIFY_REPORTING 4 // mode(all, analog, or digital), pin, enable or disable
 #define GET_FIRMWARE_VERSION 5
 #define GET_PICO_UNIQUE_ID  6
-#define SERVO_ATTACH 7
-#define SERVO_WRITE 8
-#define SERVO_DETACH 9
+#define SERVO_ATTACH 7 // unused
+#define SERVO_WRITE 8  // unused
+#define SERVO_DETACH 9 // unused
 #define I2C_BEGIN 10
 #define I2C_READ 11
 #define I2C_WRITE 12
@@ -205,7 +211,6 @@ extern void fill_neo_pixels();
 #define NP_GREEN_FILL 4
 #define NP_BLUE_FILL 5
 
-
 // NeoPixel clock frequency
 #define NP_FREQUENCY 800000
 
@@ -232,6 +237,23 @@ extern void fill_neo_pixels();
 
 #define MAXIMUM_NUM_NEOPIXELS 150
 
+// init hc-sr04
+// command offsets
+#define SONAR_TRIGGER_PIN 1
+#define SONAR_ECHO_PIN 2
+
+/* Maximum number of Sonar devices */
+#define MAX_SONARS 4
+
+// init dht command offsets
+#define DHT_DATA_PIN 1
+
+/* Maximum number of DHT devices */
+#define MAX_DHTS 2
+
+/* maximum dht timings */
+const uint DHT_MAX_TIMINGS = 85;
+
 /*********************** REPORTING BUFFER OFFSETS ******************/
 // loopback buffer offset for data being looped back
 #define LOOP_BACK_DATA 2
@@ -250,6 +272,19 @@ extern void fill_neo_pixels();
 #define ANALOG_INPUT_GPIO_PIN 2
 #define ANALOG_VALUE_HIGH_BYTE 3
 #define ANALOG_VALUE_LOW_BYTE 4
+
+// sonar report buffer offsets
+#define SONAR_TRIG_PIN 2
+#define CM_WHOLE_VALUE 3
+#define CM_FRAC_VALUE 4
+
+// dht report buffer offset
+#define DHT_REPORT_PIN 2
+#define DHT_HUMIDITY_WHOLE_VALUE 3
+#define DHT_HUMIDITY_FRAC_VALUE 4
+#define DHT_TEMPERATURE_WHOLE_VALUE 5
+#define DHT_TEMPERATURE_FRAC_VALUE 6
+
 /******************************************************
  *                 PIN MODE DEFINITIONS
  *****************************************************/
@@ -259,6 +294,8 @@ extern void fill_neo_pixels();
 #define DIGITAL_INPUT_PULL_UP 3
 #define DIGITAL_INPUT_PULL_DOWN 4
 #define ANALOG_INPUT 5
+#define SONAR 7
+#define DHT 8
 
 #define PIN_MODE_NOT_SET 255
 
@@ -274,7 +311,8 @@ extern void fill_neo_pixels();
 #define I2C_WRITE_FAILED 8
 #define I2C_READ_FAILED 9
 #define I2C_READ_REPORT 10
-#define SONAR_DISTANCE 11 // for the future
+#define SONAR_DISTANCE 11
+#define DHT_REPORT 12
 #define DEBUG_PRINT 99
 
 /***************************************************************
@@ -291,8 +329,8 @@ extern void fill_neo_pixels();
 #define MAX_ANALOG_PINS_SUPPORTED 5
 
 /* Firmware Version Values */
-#define FIRMWARE_MAJOR 0
-#define FIRMWARE_MINOR 4
+#define FIRMWARE_MAJOR 1
+#define FIRMWARE_MINOR 0
 
 // maximum length of a command packet in bytes
 #define MAX_COMMAND_LENGTH 30
@@ -316,6 +354,39 @@ typedef struct analog_pin_descriptor {
     int differential;       // difference between current and last value needed
 } analog_pin_descriptor;
 
+// This structure describes an HC-SR04 type device
+typedef struct hc_sr04_descriptor {
+    uint trig_pin; // trigger pin
+    uint echo_pin; // echo pin
+    /* for possible future use
+    int last_val_whole; // value on right side of decimal
+    int last_val_frac; // value on left side of decimal
+    */
+} hc_sr04_descriptor;
+
+// this structure holds an index into the sonars array
+// and the sonars array
+typedef struct sonar_data {
+    int next_sonar_index;
+    hc_sr04_descriptor sonars[MAX_SONARS];
+}sonar_data;
+
+// this structure describes a DHT type device
+typedef struct dht_descriptor {
+    uint data_pin; // data pin
+    absolute_time_t previous_time;
+    /* for possible future use
+    int last_val_whole; // value on right side of decimal
+    int last_val_frac; // value on left side of decimal
+    */
+} dht_descriptor;
+
+// this structure holds an index into the dht array
+// and the sonars array
+typedef struct dht_data {
+    int next_dht_index;
+    dht_descriptor dhts[MAX_DHTS];
+}dht_data;
 
 typedef struct {
     // a pointer to the command processing function

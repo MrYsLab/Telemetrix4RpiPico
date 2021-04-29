@@ -1,0 +1,134 @@
+
+/********************************************************
+ * Copyright (c) 2021 Alan Yorinks All rights reserved.
+
+ This program is free software; you can redistribute it and/or
+ modify it under the terms of the GNU AFFERO GENERAL PUBLIC LICENSE
+ Version 3 as published by the Free Software Foundation; either
+ or (at your option) any later version.
+ This library is distributed in the hope that it will be useful,f
+ but WITHOUT ANY WARRANTY; without even the implied warranty of
+ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ General Public License for more details.
+
+ You should have received a copy of the GNU AFFERO GENERAL PUBLIC LICENSE
+ along with this library; if not, write to the Free Software
+ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+ */
+
+;
+; Copyright (c) 2020 Raspberry Pi (Trading) Ltd.
+;
+; SPDX-License-Identifier: BSD-3-Clause
+;
+
+.program ws2812
+.side_set 1
+
+.define public T1 2
+.define public T2 5
+.define public T3 3
+
+.lang_opt python sideset_init = pico.PIO.OUT_HIGH
+.lang_opt python out_init     = pico.PIO.OUT_HIGH
+.lang_opt python out_shiftdir = 1
+
+.wrap_target
+bitloop:
+    out x, 1       side 0 [T3 - 1] ; Side-set still takes place when instruction stalls
+    jmp !x do_zero side 1 [T1 - 1] ; Branch on the bit we shifted out. Positive pulse
+do_one:
+    jmp  bitloop   side 1 [T2 - 1] ; Continue driving high, for a long pulse
+do_zero:
+    nop            side 0 [T2 - 1] ; Or drive low, for a short pulse
+.wrap
+
+% c-sdk {
+#include "hardware/clocks.h"
+
+static inline void ws2812_init(PIO pio, uint sm, uint offset, uint pin, float freq, bool rgbw) {
+
+    pio_gpio_init(pio, pin);
+    pio_sm_set_consecutive_pindirs(pio, sm, pin, 1, true);
+
+    pio_sm_config c = ws2812_program_get_default_config(offset);
+    sm_config_set_sideset_pins(&c, pin);
+    sm_config_set_out_shift(&c, false, true, rgbw ? 32 : 24);
+    sm_config_set_fifo_join(&c, PIO_FIFO_JOIN_TX);
+
+    int cycles_per_bit = ws2812_T1 + ws2812_T2 + ws2812_T3;
+    float div = clock_get_hz(clk_sys) / (freq * cycles_per_bit);
+    sm_config_set_clkdiv(&c, div);
+
+    pio_sm_init(pio, sm, offset, &c);
+    pio_sm_set_enabled(pio, sm, true);
+}
+%}
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;;;;;; The hc_sr04 code is based on the work by GitJer ;;;;;;;;;;:
+;; https://github.com/GitJer/Some_RPI-Pico_stuff/tree/main/HCSR04 ;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+.program hc_sr04
+
+.wrap_target
+                    ; give a puls to the HCSR04 Trigger pin
+    set pins 1      ; set the trigger to 1
+                    ; delay for 10 us (the length of the trigger pulse)
+    set x 19        ; set x to 10011 (and clear the higher bits)
+    mov ISR x       ; copy x to ISR
+    in NULL 6       ; shift in 6 more 0 bits
+    mov x ISR       ; move the ISR to x (which now contains 10011000000)
+delay1:
+    jmp x-- delay1  ; count down to 0: a delay of (about) 10 us
+
+    set pins 0      ; make the trigger 0 again, completing the trigger pulse
+                    ;
+    wait 1 pin 0    ; wait for the echo pin to rise
+                    ; start a counting loop to measure the length of the echo pulse
+    mov x ~NULL     ; start with the value 0xFFFFFFFF
+timer:
+    jmp x-- test    ; count down
+    jmp timerstop   ; timer has reached 0, stop count down
+test:
+    jmp pin timer   ; test if the echo pin is still 1, if so, continue counting down
+timerstop:          ; echo pulse is over (or timer has reached 0)
+    mov ISR ~x      ; move the bit-inversed value in x to the ISR
+    push noblock    ; push the ISR into the Rx FIFO
+                    ; delay for 60ms (advice from datasheet to prevent triggering on echos)
+    set x 28        ; set x to 11100
+    mov ISR x       ; copy x to ISR
+    in NULL 18      ; shift in 18 more bits
+    mov x ISR       ; move the ISR to x
+delay2:
+    jmp x-- delay2  ; delay (about) 60 ms
+.wrap               ; start over
+
+% c-sdk {
+static inline void hc_sr04_init(PIO pio, uint sm, uint offset, uint trig_pin, uint echo_pin) {
+   pio_gpio_init(pio, trig_pin);
+   pio_gpio_init(pio, echo_pin);
+
+// load the pio program into the pio memory
+    //uint offset = pio_add_program(pio, &hc_sr04_program);
+    // make an sm config
+    pio_sm_config c = hc_sr04_program_get_default_config(offset);
+    // set the 'in' pins, also used for 'wait'
+    sm_config_set_in_pins(&c, echo_pin);
+    // set the 'jmp' pin
+    sm_config_set_jmp_pin(&c, echo_pin);
+    // set the output pin to output
+    pio_sm_set_consecutive_pindirs(pio, sm, trig_pin, 1, true);
+    // set the 'set' pins
+    sm_config_set_set_pins(&c, trig_pin, 1);
+    // set shift direction
+    sm_config_set_in_shift(&c, false, false, 0);
+    // init the pio sm with the config
+    pio_sm_init(pio, sm, offset, &c);
+    // enable the sm
+    pio_sm_set_enabled(pio, sm, true);
+}
+%}
+
+

@@ -1,6 +1,3 @@
-//
-// Created by afy on 2/18/21.f
-//
 
 /********************************************************
  * Copyright (c) 2021 Alan Yorinks All rights reserved.
@@ -19,6 +16,18 @@
  Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
  */
 
+/******************** Attributions ***********************************
+ * This file contains modifications of the work of others to support some
+ * of the project's features.
+ *
+ * Neopixel support: https://github.com/raspberrypi/pico-examples/tree/master/pio/ws2812
+ *
+ * DHT sensor support: https://github.com/raspberrypi/pico-examples/tree/master/gpio/dht_sensor
+ *
+ * HC-SR04 sensor support: https://github.com/GitJer/Some_RPI-Pico_stuff/tree/main/HCSR04
+ *
+ *************************************************************************/
+
 #pragma clang diagnostic push
 #pragma ide diagnostic ignored "EndlessLoop"
 
@@ -30,6 +39,9 @@
 
 const uint LED_PIN = 25; // board LED
 
+// buffer to hold incoming command data
+uint8_t command_buffer[MAX_COMMAND_LENGTH];
+
 bool stop_reports = false; // a flag to stop sending all report messages
 
 // an array of digital_pin_descriptors
@@ -38,12 +50,25 @@ pin_descriptor the_digital_pins[MAX_DIGITAL_PINS_SUPPORTED];
 // an array of analog_pin_descriptors
 analog_pin_descriptor the_analog_pins[MAX_ANALOG_PINS_SUPPORTED];
 
-// buffer to hold incoming command data
-uint8_t command_buffer[MAX_COMMAND_LENGTH];
+// number of active sonars
+int sonar_count = -1;
+uint sonar_offset;
 
-// neopixel support
-PIO pio = pio0;
-uint sm = 0;
+// hc-sr04 pio support values
+PIO sonar_pio = pio1;
+
+// sonar device descriptors
+sonar_data the_hc_sr04s = {.next_sonar_index = 0};
+
+// number of active dht devices
+int dht_count = -1;
+
+// dht device descriptors
+dht_data the_dhts = {.next_dht_index = 0};
+
+// pio for neopixel values
+PIO np_pio = pio0;
+uint np_sm = 0;
 
 // neopixel storage for up to 150 pixel string
 // Each entry contains an RGG array.
@@ -67,6 +92,11 @@ static inline uint32_t urgb_u32(uint8_t r, uint8_t g, uint8_t b) {
 // PWM values
 uint32_t top;
 
+// for dht repeating read timer
+struct repeating_timer timer;
+volatile bool timer_fired = false;
+
+
 /******************* REPORT BUFFERS *******************/
 // NOTE First value in the array is the number of reporting
 // data elements. It does not include itself in this count.
@@ -76,7 +106,7 @@ uint32_t top;
 int loop_back_report_message[] = {2, (int) SERIAL_LOOP_BACK, 0};
 
 // buffer to hold data for send_debug_info command
-int debug_info_report_message[] = {4, DEBUG_PRINT, 0, 0, 0};
+uint debug_info_report_message[] = {4, DEBUG_PRINT, 0, 0, 0};
 
 // buffer to hold firmware version info
 int firmware_report_message[] = {3, FIRMWARE_REPORT, FIRMWARE_MAJOR, FIRMWARE_MINOR};
@@ -93,6 +123,11 @@ int digital_input_report_message[] = {3, DIGITAL_REPORT, 0, 0};
 // analog input report message
 int analog_input_report_message[] = {4, ANALOG_REPORT, 0, 0, 0};
 
+// sonar report message
+int sonar_report_message[] = {4, SONAR_DISTANCE, 0, 0, 0};
+
+// dht report message
+int dht_report_message[] = {6, DHT_REPORT, 0, 0, 0, 0, 0,};
 
 /*****************************************************************
  *                   THE COMMAND TABLE
@@ -154,7 +189,7 @@ void send_debug_info(uint id, uint value) {
     debug_info_report_message[DEBUG_ID] = id;
     debug_info_report_message[DEBUG_VALUE_HIGH_BYTE] = (value & 0xff00) >> 8;
     debug_info_report_message[DEBUG_VALUE_LOW_BYTE] = value & 0x00ff;
-    serial_write(debug_info_report_message,
+    serial_write((int *) debug_info_report_message,
                  sizeof(debug_info_report_message) / sizeof(int));
 }
 
@@ -218,10 +253,10 @@ void set_pin_mode() {
             // set frequency
             // determine top given Hz using the free-running clock
             uint32_t f_sys = clock_get_hz(clk_sys);
-            float divider = (float)(f_sys / 1000000UL);  // run the pwm clock at 1MHz
+            float divider = (float) (f_sys / 1000000UL);  // run the pwm clock at 1MHz
             pwm_set_clkdiv(slice_num, divider); // pwm clock should now be running at 1MHz
-            top =  1000000UL/f_hz -1; // calculate the TOP value
-            pwm_set_wrap(slice_num, (uint16_t)top);
+            top = 1000000UL / f_hz - 1; // calculate the TOP value
+            pwm_set_wrap(slice_num, (uint16_t) top);
 
             // set the current level to 0
             pwm_set_gpio_level(pin, 0);
@@ -266,8 +301,8 @@ void pwm_write() {
 
     pin = command_buffer[PWM_WRITE_GPIO_PIN];
 
-    value = ( command_buffer[SET_PIN_MODE_PWM_HIGH_VALUE] << 8) +
-              command_buffer[SET_PIN_MODE_PWM_LOW_VALUE];
+    value = (command_buffer[SET_PIN_MODE_PWM_HIGH_VALUE] << 8) +
+            command_buffer[SET_PIN_MODE_PWM_LOW_VALUE];
     pwm_set_gpio_level(pin, value);
 }
 
@@ -491,8 +526,8 @@ void i2c_write() {
 
 void init_neo_pixels() {
     // initialize the pico support a NeoPixel string
-    uint offset = pio_add_program(pio, &Telemetrix4RpiPico_program);
-    ws2812_init(pio, sm, offset, command_buffer[NP_PIN_NUMBER], 800000,
+    uint offset = pio_add_program(np_pio, &ws2812_program);
+    ws2812_init(np_pio, np_sm, offset, command_buffer[NP_PIN_NUMBER], 800000,
                 false);
 
     actual_number_of_pixels = command_buffer[NP_NUMBER_OF_PIXELS];
@@ -508,56 +543,93 @@ void init_neo_pixels() {
 
 }
 
-void set_neo_pixel(){
+void set_neo_pixel() {
     // set a single neopixel in the pixel buffer
     pixel_buffer[command_buffer[NP_PIXEL_NUMBER]][RED] = command_buffer[NP_SET_RED];
     pixel_buffer[command_buffer[NP_PIXEL_NUMBER]][GREEN] = command_buffer[NP_SET_GREEN];
     pixel_buffer[command_buffer[NP_PIXEL_NUMBER]][BLUE] = command_buffer[NP_SET_BLUE];
-    if(command_buffer[NP_SET_AUTO_SHOW]) {
+    if (command_buffer[NP_SET_AUTO_SHOW]) {
         show_neo_pixels();
     }
 }
 
 void show_neo_pixels() {
     // show the neopixels in the buffer
-    for(int i=0; i < actual_number_of_pixels; i++) {
+    for (int i = 0; i < actual_number_of_pixels; i++) {
         put_pixel(urgb_u32(pixel_buffer[i][RED],
                            pixel_buffer[i][GREEN],
                            pixel_buffer[i][BLUE]));
     }
 }
 
-void clear_all_neo_pixels(){
+void clear_all_neo_pixels() {
     // set all the neopixels in the buffer to all zeroes
-    for(int i=0; i < actual_number_of_pixels; i++) {
+    for (int i = 0; i < actual_number_of_pixels; i++) {
         pixel_buffer[i][RED] = 0;
         pixel_buffer[i][GREEN] = 0;
         pixel_buffer[i][BLUE] = 0;
     }
-    if(command_buffer[NP_CLEAR_AUTO_SHOW]) {
+    if (command_buffer[NP_CLEAR_AUTO_SHOW]) {
         show_neo_pixels();
     }
 }
 
-void fill_neo_pixels(){
+void fill_neo_pixels() {
     // fill all the neopixels in the buffer with the
     // specified rgb values.
-    for(int i=0; i < actual_number_of_pixels; i++) {
+    for (int i = 0; i < actual_number_of_pixels; i++) {
         pixel_buffer[i][RED] = command_buffer[NP_FILL_RED];
         pixel_buffer[i][GREEN] = command_buffer[NP_FILL_GREEN];
         pixel_buffer[i][BLUE] = command_buffer[NP_FILL_BLUE];
     }
-    if(command_buffer[NP_FILL_AUTO_SHOW]) {
+    if (command_buffer[NP_FILL_AUTO_SHOW]) {
         show_neo_pixels();
     }
 }
 
+void sonar_new() {
+    // add the sonar to the sonar struct to be processed within
+    // the main loop
+    uint trig_pin = command_buffer[SONAR_TRIGGER_PIN];
+    uint echo_pin = command_buffer[SONAR_ECHO_PIN];
+
+    // for the first HC-SR04, add the program.
+    if (sonar_count == -1) {
+        sonar_offset = pio_add_program(sonar_pio, &hc_sr04_program);
+    }
+    sonar_count++;
+    if (sonar_count > MAX_SONARS) {
+        return;
+    }
+    the_hc_sr04s.sonars[sonar_count].trig_pin = trig_pin;
+    the_hc_sr04s.sonars[sonar_count].echo_pin = echo_pin;
+
+    hc_sr04_init(sonar_pio, (uint) sonar_count, sonar_offset, trig_pin, echo_pin);
+}
+
+bool repeating_timer_callback(struct repeating_timer *t) {
+    //printf("Repeat at %lld\n", time_us_64());
+    timer_fired = true;
+    return true;
+}
+
+void dht_new() {
+    if (dht_count > MAX_DHTS) {
+        return;
+    }
+    if(dht_count == -1){
+        // first time through start repeating timer
+        add_repeating_timer_ms(2000, repeating_timer_callback, NULL, &timer);
+    }
+    dht_count++;
+
+    uint dht_pin = command_buffer[DHT_DATA_PIN];
+    the_dhts.dhts[dht_count].data_pin = dht_pin;
+    the_dhts.dhts[dht_count].previous_time = get_absolute_time();
+    gpio_init(dht_pin);
+}
+
 /******************* FOR FUTURE RELEASES **********************/
-
-
-void sonar_new() {}
-
-void dht_new() {}
 
 void reset_data() {}
 
@@ -673,19 +745,157 @@ void scan_analog_inputs() {
     }
 }
 
+void scan_sonars() {
+    // read the next sonar device
+    // one device is read each cycle
+    if (sonar_count >= 0) {
+        read_sonar(the_hc_sr04s.next_sonar_index);
+        the_hc_sr04s.next_sonar_index++;
+        if (the_hc_sr04s.next_sonar_index > sonar_count) {
+            the_hc_sr04s.next_sonar_index = 0;
+        }
+    }
+}
+
+void read_sonar(uint sm) {
+    // value is used to read from the sm RX FIFO
+    uint32_t clock_cycles;
+    // clear the FIFO: do a new measurement
+    pio_sm_clear_fifos(sonar_pio, sm);
+    // give the sm some time to do a measurement and place it in the FIFO
+    sleep_ms(100);
+    // check that the FIFO isn't empty
+    if (pio_sm_is_rx_fifo_empty(sonar_pio, sm)) {
+        // its empty so create a report returning a distance of zero
+        sonar_report_message[SONAR_TRIG_PIN] = (uint8_t) the_hc_sr04s.sonars[sm].trig_pin;
+        sonar_report_message[CM_WHOLE_VALUE] = 0;
+        sonar_report_message[CM_FRAC_VALUE] = 0;
+        serial_write(sonar_report_message, 5);
+        return;
+    }
+
+    // read one data item from the FIFO
+    // Note: every test for the end of the echo pulse takes 2 pio clock ticks,
+    //       but changes the 'timer' by only one
+    clock_cycles = 2 * pio_sm_get(sonar_pio, sm);
+    // using
+    // - the time for 1 pio clock tick (1/125000000 s)
+    // - speed of sound in air is about 340 m/s
+    // - the sound travels from the HCS-R04 to the object and back (twice the distance)
+    // we can calculate the distance in cm by multiplying with 0.000136
+    float cm = (float) clock_cycles * 0.000136;
+
+    // convert the value into 2 integers - left and right of the decimal point
+    float nearest = roundf(cm * 100) / 100;
+    int intpart = (int) nearest;
+    int decpart = (int) ((nearest - intpart) * 100);
+
+    sonar_report_message[SONAR_TRIG_PIN] = (uint8_t) the_hc_sr04s.sonars[sm].trig_pin;
+    sonar_report_message[CM_WHOLE_VALUE] = intpart;
+    sonar_report_message[CM_FRAC_VALUE] = decpart;
+    serial_write(sonar_report_message, 5);
+}
+
+void scan_dhts() {
+    // read the next dht device
+    // one device is read each cycle
+    if (dht_count >= 0) {
+        if (timer_fired) {
+            timer_fired = false;
+            int the_index = the_dhts.next_dht_index;
+            read_dht(the_dhts.dhts[the_index].data_pin);
+            the_dhts.next_dht_index++;
+            if (the_dhts.next_dht_index > dht_count) {
+                the_dhts.next_dht_index = 0;
+            }
+        }
+    }
+}
+
+void read_dht(uint dht_pin) {
+    int data[5] = {0, 0, 0, 0, 0};
+    uint last = 1;
+    uint j = 0;
+    float temp_celsius;
+    float humidity;
+    float nearest;
+    int temp_int_part;
+    int temp_dec_part;
+    int humidity_int_part;
+    int humidity_dec_part;
+
+    gpio_set_dir(dht_pin, GPIO_OUT);
+    gpio_put(dht_pin, 0);
+    sleep_ms(20);
+    gpio_set_dir(dht_pin, GPIO_IN);
+
+    sleep_us(1);
+    for (uint i = 0; i < DHT_MAX_TIMINGS; i++) {
+        uint count = 0;
+        while (gpio_get(dht_pin) == last) {
+            count++;
+            sleep_us(1);
+            if (count == 255) break;
+        }
+        last = gpio_get(dht_pin);
+        if (count == 255) break;
+
+        if ((i >= 4) && (i % 2 == 0)) {
+            data[j / 8] <<= 1;
+            if (count > 46) data[j / 8] |= 1;
+            j++;
+        }
+    }
+    if ((j >= 40) && (data[4] == ((data[0] + data[1] + data[2] + data[3]) & 0xFF))) {
+        humidity = (float) ((data[0] << 8) + data[1]) / 10;
+        if (humidity > 100) {
+            humidity = data[0];
+        }
+        temp_celsius = (float) (((data[2] & 0x7F) << 8) + data[3]) / 10;
+        if (temp_celsius > 125) {
+            temp_celsius = data[2];
+        }
+        if (data[2] & 0x80) {
+            temp_celsius = -temp_celsius;
+        }
+
+        nearest = roundf(temp_celsius * 100) / 100;
+        temp_int_part = (int) nearest;
+        temp_dec_part = (int) ((nearest - temp_int_part) * 100);
+
+        nearest = roundf(humidity * 100) / 100;
+        humidity_int_part = (int) nearest;
+        humidity_dec_part = (int) ((nearest - humidity_int_part) * 100);
+
+
+    } else {
+        // bad data return zeros
+        temp_int_part = temp_dec_part =
+        humidity_int_part = humidity_dec_part = 0;
+    }
+    dht_report_message[DHT_REPORT_PIN] = (int) dht_pin;
+    dht_report_message[DHT_HUMIDITY_WHOLE_VALUE] = humidity_int_part;
+    dht_report_message[DHT_HUMIDITY_FRAC_VALUE] = humidity_dec_part;
+
+    dht_report_message[DHT_TEMPERATURE_WHOLE_VALUE] = temp_int_part;
+    dht_report_message[DHT_TEMPERATURE_FRAC_VALUE] = temp_dec_part;
+    serial_write(dht_report_message, 7);
+}
+
 
 /*************************************************
  * Write data to serial interface
  * @param buffer
  * @param num_of_bytes_to_send
  */
-void serial_write(int *buffer, int num_of_bytes_to_send) {
+void serial_write(const int *buffer, int num_of_bytes_to_send) {
     for (int i = 0; i < num_of_bytes_to_send; i++) {
         putchar((buffer[i]) & 0x00ff);
     }
     stdio_flush();
 
 }
+
 
 /***************************************************************
  *                  MAIN FUNCTION
@@ -716,6 +926,12 @@ int main() {
         the_analog_pins[i].last_value = 0;
     }
 
+    // initialize the sonar structures
+    sonar_data the_hc_sr04s = {.next_sonar_index = 0};
+    for (int i = 0; i < MAX_SONARS; i++) {
+        the_hc_sr04s.sonars[i].trig_pin = the_hc_sr04s.sonars[i].echo_pin = (uint) -1;
+    }
+
     gpio_init(LED_PIN);
     gpio_set_dir(LED_PIN, GPIO_OUT);
 
@@ -729,8 +945,8 @@ int main() {
         if (!stop_reports) {
             scan_digital_inputs();
             scan_analog_inputs();
-            //scan_sonars();
-            //scan_dhts();
+            scan_sonars();
+            scan_dhts();
         }
 
 
