@@ -1,9 +1,10 @@
 # Telemetrix4RpiPico
 
-This is an early version of a Telemetrix server for the Raspberry Pi Pico.
+![](images/tmx.png)
 
-This is a work in progress.
+The Telemetrix4RpiPico server, in conjunction with its [client peer](https://github.com/MrYsLab/telemetrix-rpi-pico),
+allows you to control a Raspberry Pi Pico remotely from your
+PC. A complete [User's Guide](https://mryslab.github.io/telemetrix-rpi-pico/) is available describing how to 
+install and use both the server and client.
 
-Download the .uf2 file [here.](https://github.com/MrYsLab/Telemetrix4RpiPico/raw/master/cmake-build-release/Telemetrix4RpiPico.uf2)
-
-You may view the Python client code [here.](https://github.com/MrYsLab/telemetrix-rpi-pico)
+To install the server, follow these [installation instructions.](https://mryslab.github.io/telemetrix-rpi-pico/install_pico_server/)
