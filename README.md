@@ -1,3 +1,9 @@
+# This is a working branch to implement an SPI interface.
+## An update log is below:
+
+* July 21 2021
+    * Created the spi branch.
+
 # Telemetrix4RpiPico
 
 ![](images/tmx.png)
