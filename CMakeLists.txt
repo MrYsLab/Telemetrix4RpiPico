@@ -12,7 +12,7 @@ pico_enable_stdio_usb(Telemetrix4RpiPico 1)
 pico_add_extra_outputs(Telemetrix4RpiPico)
 target_link_libraries(Telemetrix4RpiPico pico_stdlib hardware_pwm
         pico_unique_id hardware_watchdog hardware_adc hardware_i2c
-        hardware_pio hardware_clocks)
+        hardware_pio hardware_clocks hardware_spi)
 
 add_executable(pio_Telemetrix4RpiPico archive/x.cpp)
 # generate the header file into the source tree as it is included in the RP2040 datasheet

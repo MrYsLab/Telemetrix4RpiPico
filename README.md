@@ -2,7 +2,12 @@
 ## An update log is below:
 
 * July 21 2021
-    * Created the spi branch.
+  * Created the spi branch.
+  
+* July 24 2021
+  * Updated Telemetrix4RpiPico.h for SPI processing
+  * init_spi method coded. Not yet tested.
+  * write_blocking_spi coded. Not yet tested.
 
 # Telemetrix4RpiPico
 

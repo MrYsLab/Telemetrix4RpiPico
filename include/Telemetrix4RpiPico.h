@@ -18,6 +18,7 @@
 #include "hardware/i2c.h"
 #include "hardware/pio.h"
 #include "hardware/clocks.h"
+#include "hardware/spi.h"
 #include "Telemetrix4RpiPico.pio.h"
 #include "math.h"
 
@@ -88,6 +89,18 @@ extern void read_sonar(uint);
 
 extern void read_dht(uint);
 
+extern void init_spi();
+
+extern void read_blocking_spi();
+
+extern void write_blocking_spi();
+
+extern void read16_blocking_spi();
+extern void write16_blocking_spi();
+extern void write16_read16_blocking_spi();
+extern void set_format_spi();
+
+
 
 
 /*********************************************************
@@ -121,6 +134,14 @@ extern void read_dht(uint);
 #define SET_NEO_PIXEL 21
 #define CLEAR_ALL_NEO_PIXELS 22
 #define FILL_NEO_PIXELS 23
+#define SPI_INIT 24
+#define SPI_WRITE_READ_BLOCKING 25
+#define SPI_WRITE_BLOCKING 26
+#define SPI_READ_BLOCKING 27
+#define SPI_WRITE16_READ16_BLOCKING 28
+#define SPI_WRITE16_BLOCKING 29
+#define SPI_READ16_BLOCKING 30
+#define SPI_SET_FORMAT 31
 
 /*****************************************************
  *                  MESSAGE OFFSETS
@@ -176,6 +197,23 @@ extern void read_dht(uint);
 #define SET_PIN_MODE_ANALOG_IN_REPORTING_STATE 5
 #define SET_PIN_MODE_ANALOG_DIFF_HIGH 3
 #define SET_PIN_MODE_ANALOG_DIFF_LOW 4
+
+// set pin mode spi offsets
+#define SPI_PORT 0
+#define SPI_MISO 1
+#define SPI_MOSI 2
+#define SPI_CLK_PIN 3
+#define SPI_FREQ_MSB 4
+#define SPI_FREQ_LSB 5
+#define SPI_CS_LIST_LENGTH 6
+#define SPI_CS_LIST 7 // beginning of list
+
+// spi write blocking offsets
+// #define SPI_PORT 0
+#define SPI_CS_PIN 1
+#define SPI_WRITE_LEN 2
+#define SPI_WRITE_DATA 3
+
 
 // digital_write
 #define DIGITAL_WRITE_GPIO_PIN 1

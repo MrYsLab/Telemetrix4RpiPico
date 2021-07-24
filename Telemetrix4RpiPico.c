@@ -163,7 +163,14 @@ command_descriptor command_table[] =
                 {&show_neo_pixels},
                 {&set_neo_pixel},
                 {&clear_all_neo_pixels},
-                {&fill_neo_pixels}
+                {&fill_neo_pixels},
+                {&init_spi},
+                {&read_blocking_spi},
+                {&write_blocking_spi},
+                {&read16_blocking_spi},
+                {&write16_blocking_spi},
+                {&write16_read16_blocking_spi},
+                {&set_format_spi}
         };
 
 /***************************************************************************
@@ -628,6 +635,73 @@ void dht_new() {
     the_dhts.dhts[dht_count].previous_time = get_absolute_time();
     gpio_init(dht_pin);
 }
+
+void init_spi(){
+    spi_inst_t *spi_port;
+    uint spi_baud_rate;
+    uint cs_pin;
+
+    // initialize the spi port
+    if(command_buffer[SPI_PORT] == 0){
+        spi_port = spi0;
+    }
+    else{
+        spi_port = spi1;
+    }
+    spi_baud_rate = (command_buffer[SPI_FREQ_MSB] << 8) +
+            command_buffer[SPI_FREQ_LSB];
+
+    spi_init(spi_port, spi_baud_rate);
+
+    // set gpio pins for miso, mosi and clock
+    gpio_set_function(command_buffer[SPI_MISO], GPIO_FUNC_SPI);
+    gpio_set_function(command_buffer[SPI_MOSI], GPIO_FUNC_SPI);
+    gpio_set_function(command_buffer[SPI_CLK_PIN], GPIO_FUNC_SPI);
+
+    // initialize chip select GPIO pins
+    for(int i = 0; i < command_buffer[SPI_CS_LIST_LENGTH]; i++){
+        cs_pin = command_buffer[SPI_CS_LIST + i];
+        // Chip select is active-low, so we'll initialise it to a driven-high state
+        gpio_init(cs_pin);
+        gpio_set_dir(cs_pin, GPIO_OUT);
+        gpio_put(cs_pin, 1);
+    }
+}
+
+void read_blocking_spi(){
+
+}
+void write_blocking_spi() {
+    spi_inst_t *spi_port;
+    uint cs_pin;
+    size_t data_length;
+    data_length = command_buffer[SPI_WRITE_LEN];
+    uint8_t data_buffer[data_length];
+
+    if(command_buffer[SPI_PORT] == 0){
+        spi_port = spi0;
+    }
+    else{
+        spi_port = spi1;
+    }
+
+    cs_pin = command_buffer[SPI_CS_PIN];
+    data_length = command_buffer[SPI_WRITE_LEN];
+
+    // chip select
+    gpio_put(cs_pin, 0);
+
+    // write data
+    spi_write_blocking(spi_port, data_buffer, data_length);
+
+    // chip deselect
+    gpio_put(cs_pin, 1);
+}
+
+void read16_blocking_spi(){}
+void write16_blocking_spi(){}
+void write16_read16_blocking_spi(){}
+void set_format_spi(){}
 
 /******************* FOR FUTURE RELEASES **********************/
 
