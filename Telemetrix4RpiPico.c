@@ -669,14 +669,37 @@ void init_spi(){
 }
 
 void read_blocking_spi(){
+    spi_inst_t *spi_port;
+    uint cs_pin;
+    size_t data_length;
+    uint8_t repeated_transmit_byte;
+    uint8_t data[command_buffer[SPI_READ_LEN]];
+
+    if(command_buffer[SPI_PORT] == 0){
+        spi_port = spi0;
+    }
+    else{
+        spi_port = spi1;
+    }
+
+    cs_pin = command_buffer[SPI_READ_CS_PIN];
+    data_length = command_buffer[SPI_READ_LEN];
+    repeated_transmit_byte = command_buffer[SPI_REPEATED_DATA];
+
+    // chip select
+    gpio_put(cs_pin, 0);
+
+    // write data
+    spi_read_blocking(spi_port, repeated_transmit_byte, data, data_length);
+
+    // chip deselect
+    gpio_put(cs_pin, 1);
 
 }
 void write_blocking_spi() {
     spi_inst_t *spi_port;
     uint cs_pin;
     size_t data_length;
-    data_length = command_buffer[SPI_WRITE_LEN];
-    uint8_t data_buffer[data_length];
 
     if(command_buffer[SPI_PORT] == 0){
         spi_port = spi0;
@@ -688,11 +711,13 @@ void write_blocking_spi() {
     cs_pin = command_buffer[SPI_CS_PIN];
     data_length = command_buffer[SPI_WRITE_LEN];
 
+    uint8_t *data = &command_buffer[SPI_WRITE_DATA];
+
     // chip select
     gpio_put(cs_pin, 0);
 
     // write data
-    spi_write_blocking(spi_port, data_buffer, data_length);
+    spi_write_blocking(spi_port, data, data_length);
 
     // chip deselect
     gpio_put(cs_pin, 1);

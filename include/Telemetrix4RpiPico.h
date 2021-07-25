@@ -214,6 +214,11 @@ extern void set_format_spi();
 #define SPI_WRITE_LEN 2
 #define SPI_WRITE_DATA 3
 
+// spi read blocking offsets
+// #define SPI_PORT 0
+#define SPI_READ_LEN 1
+#define SPI_READ_CS_PIN 2
+#define SPI_REPEATED_DATA 3
 
 // digital_write
 #define DIGITAL_WRITE_GPIO_PIN 1
