@@ -246,6 +246,16 @@ extern void set_format_spi();
 #define I2C_ERROR_REPORT_LENGTH 4
 #define I2C_ERROR_REPORT_NUM_OF_BYTE_TO_SEND 5
 
+// spi report buffer offsets
+#define SPI_PACKET_LENGTH 0
+#define SPI_REPORT_ID 1
+#define SPI_REPORT_PORT 2
+#define SPI_REPORT_NUMBER_OF_DATA_BYTES 3
+#define SPI_DATA 4
+
+#define SPI_READ_DATA_BASE_BYTES 5
+
+
 // init neopixels
 // command offsets
 #define NP_PIN_NUMBER 1
@@ -356,6 +366,7 @@ const uint DHT_MAX_TIMINGS = 85;
 #define I2C_READ_REPORT 10
 #define SONAR_DISTANCE 11
 #define DHT_REPORT 12
+#define SPI_REPORT 13
 #define DEBUG_PRINT 99
 
 /***************************************************************

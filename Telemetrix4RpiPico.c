@@ -114,6 +114,10 @@ int firmware_report_message[] = {3, FIRMWARE_REPORT, FIRMWARE_MAJOR, FIRMWARE_MI
 // buffer to hold i2c report data
 int i2c_report_message[64];
 
+// buffer to hold spi report data
+int spi_report_message[64];
+
+
 // get_pico_unique_id report buffer
 int unique_id_report_report_message[] = {9, REPORT_PICO_UNIQUE_ID,
                                          0, 0, 0, 0, 0, 0, 0, 0};
@@ -669,6 +673,13 @@ void init_spi(){
 }
 
 void read_blocking_spi(){
+    // The report_message offsets:
+    // 0 = packet length - this must be calculated
+    // 1 = SPI_READ_REPORT
+    // 2 = The i2c port - 0 or 1
+    // 3 = number of bytes read
+    // 4... = bytes read
+
     spi_inst_t *spi_port;
     uint cs_pin;
     size_t data_length;
@@ -695,6 +706,14 @@ void read_blocking_spi(){
     // chip deselect
     gpio_put(cs_pin, 1);
 
+    // build a report from the data returned
+    spi_report_message[SPI_PACKET_LENGTH] = I2C_READ_DATA_BASE_BYTES + data_length;
+    spi_report_message[SPI_REPORT_ID] = SPI_REPORT;
+    spi_report_message[SPI_REPORT_PORT] = command_buffer[SPI_PORT];
+    spi_report_message[SPI_REPORT_NUMBER_OF_DATA_BYTES] = data_length;
+    for(int i=0; i < data_length; i++){
+        spi_report_message[SPI_DATA + i] = data[i];
+    }
 }
 void write_blocking_spi() {
     spi_inst_t *spi_port;
