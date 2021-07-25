@@ -8,6 +8,10 @@
   * Updated Telemetrix4RpiPico.h for SPI processing
   * init_spi method coded. Not yet tested.
   * write_blocking_spi coded. Not yet tested.
+  
+* July 25 2021
+  * Modified write_blocking_spi function. Not yet tested.
+  * Implemented read_blocking_spi function. Not yet tested.
 
 # Telemetrix4RpiPico
 
