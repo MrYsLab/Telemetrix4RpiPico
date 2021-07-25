@@ -174,7 +174,8 @@ command_descriptor command_table[] =
                 {&read16_blocking_spi},
                 {&write16_blocking_spi},
                 {&write16_read16_blocking_spi},
-                {&set_format_spi}
+                {&set_format_spi},
+                {&spi_cs_control}
         };
 
 /***************************************************************************
@@ -672,6 +673,20 @@ void init_spi(){
     }
 }
 
+void spi_cs_control(){
+    uint cs_pin;
+    bool cs_state;
+
+    cs_pin = command_buffer[SPI_SELECT_PIN];
+    cs_state = command_buffer[SPI_SELECT_STATE];
+    if(cs_state){
+        gpio_put(cs_pin, 0);
+    }
+    else{
+        gpio_put(cs_pin, 1);
+    }
+}
+
 void read_blocking_spi(){
     // The report_message offsets:
     // 0 = packet length - this must be calculated
@@ -681,7 +696,6 @@ void read_blocking_spi(){
     // 4... = bytes read
 
     spi_inst_t *spi_port;
-    uint cs_pin;
     size_t data_length;
     uint8_t repeated_transmit_byte;
     uint8_t data[command_buffer[SPI_READ_LEN]];
@@ -693,18 +707,11 @@ void read_blocking_spi(){
         spi_port = spi1;
     }
 
-    cs_pin = command_buffer[SPI_READ_CS_PIN];
     data_length = command_buffer[SPI_READ_LEN];
     repeated_transmit_byte = command_buffer[SPI_REPEATED_DATA];
 
-    // chip select
-    gpio_put(cs_pin, 0);
-
     // write data
     spi_read_blocking(spi_port, repeated_transmit_byte, data, data_length);
-
-    // chip deselect
-    gpio_put(cs_pin, 1);
 
     // build a report from the data returned
     spi_report_message[SPI_PACKET_LENGTH] = I2C_READ_DATA_BASE_BYTES + data_length;
@@ -727,19 +734,13 @@ void write_blocking_spi() {
         spi_port = spi1;
     }
 
-    cs_pin = command_buffer[SPI_CS_PIN];
     data_length = command_buffer[SPI_WRITE_LEN];
 
     uint8_t *data = &command_buffer[SPI_WRITE_DATA];
 
-    // chip select
-    gpio_put(cs_pin, 0);
-
     // write data
     spi_write_blocking(spi_port, data, data_length);
 
-    // chip deselect
-    gpio_put(cs_pin, 1);
 }
 
 void read16_blocking_spi(){}
