@@ -169,11 +169,12 @@ command_descriptor command_table[] =
                 {&clear_all_neo_pixels},
                 {&fill_neo_pixels},
                 {&init_spi},
-                {&read_blocking_spi},
+                {&write_read_blocking_spi},
                 {&write_blocking_spi},
-                {&read16_blocking_spi},
-                {&write16_blocking_spi},
+                {&read_blocking_spi},
                 {&write16_read16_blocking_spi},
+                {&write16_blocking_spi},
+                {&read16_blocking_spi},
                 {&set_format_spi},
                 {&spi_cs_control}
         };
@@ -653,8 +654,11 @@ void init_spi(){
     else{
         spi_port = spi1;
     }
-    spi_baud_rate = (command_buffer[SPI_FREQ_MSB] << 8) +
-            command_buffer[SPI_FREQ_LSB];
+
+    spi_baud_rate = ((command_buffer[SPI_FREQ_MSB] << 24) +
+            (command_buffer[SPI_FREQ_3] << 16) +
+            (command_buffer[SPI_FREQ_2] << 8) +
+            (command_buffer[SPI_FREQ_1] ));
 
     spi_init(spi_port, spi_baud_rate);
 
@@ -674,17 +678,14 @@ void init_spi(){
 }
 
 void spi_cs_control(){
-    uint cs_pin;
-    bool cs_state;
+    uint8_t cs_pin;
+    uint8_t cs_state;
 
     cs_pin = command_buffer[SPI_SELECT_PIN];
     cs_state = command_buffer[SPI_SELECT_STATE];
-    if(cs_state){
-        gpio_put(cs_pin, 0);
-    }
-    else{
-        gpio_put(cs_pin, 1);
-    }
+    asm volatile("nop \n nop \n nop");
+    gpio_put(cs_pin, cs_state);
+    asm volatile("nop \n nop \n nop");
 }
 
 void read_blocking_spi(){
@@ -694,6 +695,7 @@ void read_blocking_spi(){
     // 2 = The i2c port - 0 or 1
     // 3 = number of bytes read
     // 4... = bytes read
+
 
     spi_inst_t *spi_port;
     size_t data_length;
@@ -708,20 +710,28 @@ void read_blocking_spi(){
     }
 
     data_length = command_buffer[SPI_READ_LEN];
+    //memset(data, 0, data_length);
+    memset(data, 0, sizeof(data));
+
     repeated_transmit_byte = command_buffer[SPI_REPEATED_DATA];
 
-    // write data
+    // read data
     spi_read_blocking(spi_port, repeated_transmit_byte, data, data_length);
+    sleep_ms(100);
 
     // build a report from the data returned
-    spi_report_message[SPI_PACKET_LENGTH] = I2C_READ_DATA_BASE_BYTES + data_length;
+    spi_report_message[SPI_PACKET_LENGTH] = SPI_REPORT_NUMBER_OF_DATA_BYTES + data_length;
     spi_report_message[SPI_REPORT_ID] = SPI_REPORT;
     spi_report_message[SPI_REPORT_PORT] = command_buffer[SPI_PORT];
     spi_report_message[SPI_REPORT_NUMBER_OF_DATA_BYTES] = data_length;
     for(int i=0; i < data_length; i++){
         spi_report_message[SPI_DATA + i] = data[i];
     }
+    serial_write((int *) spi_report_message,
+                 SPI_DATA + data_length);
+
 }
+
 void write_blocking_spi() {
     spi_inst_t *spi_port;
     uint cs_pin;
@@ -735,14 +745,11 @@ void write_blocking_spi() {
     }
 
     data_length = command_buffer[SPI_WRITE_LEN];
-
-    uint8_t *data = &command_buffer[SPI_WRITE_DATA];
-
     // write data
-    spi_write_blocking(spi_port, data, data_length);
-
+    spi_write_blocking(spi_port, &command_buffer[SPI_WRITE_DATA], data_length);
 }
 
+void write_read_blocking_spi(){}
 void read16_blocking_spi(){}
 void write16_blocking_spi(){}
 void write16_read16_blocking_spi(){}
@@ -788,6 +795,7 @@ void get_next_command() {
             }
             command_buffer[i] = packet_data;
         }
+
         // the first byte is the command ID.
         // look up the function and execute it.
         // data for the command starts at index 1 in the command_buffer
@@ -797,6 +805,7 @@ void get_next_command() {
         //send_debug_info(command_buffer[0], command_buffer[1]);
 
         // call the command
+
         command_entry.command_func();
     }
 }

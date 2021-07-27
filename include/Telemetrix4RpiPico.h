@@ -97,6 +97,7 @@ extern void write_blocking_spi();
 
 extern void spi_cs_control();
 
+extern void write_read_blocking_spi();
 extern void read16_blocking_spi();
 extern void write16_blocking_spi();
 extern void write16_read16_blocking_spi();
@@ -202,28 +203,30 @@ extern void set_format_spi();
 #define SET_PIN_MODE_ANALOG_DIFF_LOW 4
 
 // set pin mode spi offsets
-#define SPI_PORT 0
-#define SPI_MISO 1
-#define SPI_MOSI 2
-#define SPI_CLK_PIN 3
-#define SPI_FREQ_MSB 4
-#define SPI_FREQ_LSB 5
-#define SPI_CS_LIST_LENGTH 6
-#define SPI_CS_LIST 7 // beginning of list
+#define SPI_PORT 1
+#define SPI_MISO 2
+#define SPI_MOSI 3
+#define SPI_CLK_PIN 4
+#define SPI_FREQ_MSB 5
+#define SPI_FREQ_3 6
+#define SPI_FREQ_2 7
+#define SPI_FREQ_1 8
+#define SPI_CS_LIST_LENGTH 9
+#define SPI_CS_LIST 10 // beginning of list
 
 // spi write blocking offsets
-// #define SPI_PORT 0
-#define SPI_WRITE_LEN 1
-#define SPI_WRITE_DATA 2
+// #define SPI_PORT 1
+#define SPI_WRITE_LEN 2
+#define SPI_WRITE_DATA 3
 
 // spi read blocking offsets
-// #define SPI_PORT 0
-#define SPI_READ_LEN 1
-#define SPI_REPEATED_DATA 2
+// #define SPI_PORT 1
+#define SPI_READ_LEN 2
+#define SPI_REPEATED_DATA 3
 
 // spi chipselect command offsets
-#define SPI_SELECT_PIN 0
-#define SPI_SELECT_STATE 1
+#define SPI_SELECT_PIN 1
+#define SPI_SELECT_STATE 2
 
 // digital_write
 #define DIGITAL_WRITE_GPIO_PIN 1
