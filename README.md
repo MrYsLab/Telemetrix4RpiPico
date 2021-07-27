@@ -13,6 +13,9 @@
   * Modified write_blocking_spi function. Not yet tested.
   * Implemented read_blocking_spi function. Not yet tested.
   * Seperated out SPI chip select control as a seperate function 
+  
+* July 27 2021
+  * Test and debug begun. Successfuly intialized and read MPU9250
 
 # Telemetrix4RpiPico
 
