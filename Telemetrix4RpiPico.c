@@ -169,15 +169,12 @@ command_descriptor command_table[] =
                 {&clear_all_neo_pixels},
                 {&fill_neo_pixels},
                 {&init_spi},
-                {&write_read_blocking_spi},
                 {&write_blocking_spi},
                 {&read_blocking_spi},
-                {&write16_read16_blocking_spi},
-                {&write16_blocking_spi},
-                {&read16_blocking_spi},
                 {&set_format_spi},
                 {&spi_cs_control}
         };
+
 
 /***************************************************************************
  *                   DEBUGGING FUNCTIONS
@@ -749,11 +746,22 @@ void write_blocking_spi() {
     spi_write_blocking(spi_port, &command_buffer[SPI_WRITE_DATA], data_length);
 }
 
-void write_read_blocking_spi(){}
-void read16_blocking_spi(){}
-void write16_blocking_spi(){}
-void write16_read16_blocking_spi(){}
-void set_format_spi(){}
+
+void set_format_spi(){
+    spi_inst_t *spi_port;
+    uint data_bits = command_buffer[SPI_NUMBER_OF_BITS];
+    spi_cpol_t cpol = command_buffer[SPI_CLOCK_PHASE];
+    spi_cpha_t cpha = command_buffer[SPI_CLOCK_POLARITY];
+
+    if(command_buffer[SPI_PORT] == 0){
+        spi_port = spi0;
+    }
+    else{
+        spi_port = spi1;
+    }
+    spi_set_format(spi_port, data_bits, cpol, cpha, 1);
+}
+
 
 /******************* FOR FUTURE RELEASES **********************/
 

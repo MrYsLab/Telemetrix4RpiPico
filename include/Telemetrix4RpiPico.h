@@ -97,10 +97,6 @@ extern void write_blocking_spi();
 
 extern void spi_cs_control();
 
-extern void write_read_blocking_spi();
-extern void read16_blocking_spi();
-extern void write16_blocking_spi();
-extern void write16_read16_blocking_spi();
 extern void set_format_spi();
 
 
@@ -138,14 +134,10 @@ extern void set_format_spi();
 #define CLEAR_ALL_NEO_PIXELS 22
 #define FILL_NEO_PIXELS 23
 #define SPI_INIT 24
-#define SPI_WRITE_READ_BLOCKING 25
-#define SPI_WRITE_BLOCKING 26
-#define SPI_READ_BLOCKING 27
-#define SPI_WRITE16_READ16_BLOCKING 28
-#define SPI_WRITE16_BLOCKING 29
-#define SPI_READ16_BLOCKING 30
-#define SPI_SET_FORMAT 31
-#define SPI_CS_CONTROL 32
+#define SPI_WRITE_BLOCKING 25
+#define SPI_READ_BLOCKING 26
+#define SPI_SET_FORMAT 27
+#define SPI_CS_CONTROL 28
 
 /*****************************************************
  *                  MESSAGE OFFSETS
@@ -227,6 +219,12 @@ extern void set_format_spi();
 // spi chipselect command offsets
 #define SPI_SELECT_PIN 1
 #define SPI_SELECT_STATE 2
+
+// spi set format command offsets
+// #define SPI_PORT 1
+#define SPI_NUMBER_OF_BITS 2
+#define SPI_CLOCK_PHASE 3
+#define SPI_CLOCK_POLARITY 4
 
 // digital_write
 #define DIGITAL_WRITE_GPIO_PIN 1
