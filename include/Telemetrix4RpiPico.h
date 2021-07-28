@@ -390,7 +390,7 @@ const uint DHT_MAX_TIMINGS = 85;
 
 /* Firmware Version Values */
 #define FIRMWARE_MAJOR 1
-#define FIRMWARE_MINOR 0
+#define FIRMWARE_MINOR 1
 
 // maximum length of a command packet in bytes
 #define MAX_COMMAND_LENGTH 30
