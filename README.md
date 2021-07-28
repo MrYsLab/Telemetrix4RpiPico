@@ -16,6 +16,9 @@
   
 * July 27 2021
   * Test and debug begun. Successfuly intialized and read MPU9250
+  
+* July 28 2021
+  * First candidate release is avaialable
 
 # Telemetrix4RpiPico
 
