@@ -114,6 +114,10 @@ int firmware_report_message[] = {3, FIRMWARE_REPORT, FIRMWARE_MAJOR, FIRMWARE_MI
 // buffer to hold i2c report data
 int i2c_report_message[64];
 
+// buffer to hold spi report data
+int spi_report_message[64];
+
+
 // get_pico_unique_id report buffer
 int unique_id_report_report_message[] = {9, REPORT_PICO_UNIQUE_ID,
                                          0, 0, 0, 0, 0, 0, 0, 0};
@@ -163,8 +167,14 @@ command_descriptor command_table[] =
                 {&show_neo_pixels},
                 {&set_neo_pixel},
                 {&clear_all_neo_pixels},
-                {&fill_neo_pixels}
+                {&fill_neo_pixels},
+                {&init_spi},
+                {&write_blocking_spi},
+                {&read_blocking_spi},
+                {&set_format_spi},
+                {&spi_cs_control}
         };
+
 
 /***************************************************************************
  *                   DEBUGGING FUNCTIONS
@@ -629,6 +639,130 @@ void dht_new() {
     gpio_init(dht_pin);
 }
 
+void init_spi(){
+    spi_inst_t *spi_port;
+    uint spi_baud_rate;
+    uint cs_pin;
+
+    // initialize the spi port
+    if(command_buffer[SPI_PORT] == 0){
+        spi_port = spi0;
+    }
+    else{
+        spi_port = spi1;
+    }
+
+    spi_baud_rate = ((command_buffer[SPI_FREQ_MSB] << 24) +
+            (command_buffer[SPI_FREQ_3] << 16) +
+            (command_buffer[SPI_FREQ_2] << 8) +
+            (command_buffer[SPI_FREQ_1] ));
+
+    spi_init(spi_port, spi_baud_rate);
+
+    // set gpio pins for miso, mosi and clock
+    gpio_set_function(command_buffer[SPI_MISO], GPIO_FUNC_SPI);
+    gpio_set_function(command_buffer[SPI_MOSI], GPIO_FUNC_SPI);
+    gpio_set_function(command_buffer[SPI_CLK_PIN], GPIO_FUNC_SPI);
+
+    // initialize chip select GPIO pins
+    for(int i = 0; i < command_buffer[SPI_CS_LIST_LENGTH]; i++){
+        cs_pin = command_buffer[SPI_CS_LIST + i];
+        // Chip select is active-low, so we'll initialise it to a driven-high state
+        gpio_init(cs_pin);
+        gpio_set_dir(cs_pin, GPIO_OUT);
+        gpio_put(cs_pin, 1);
+    }
+}
+
+void spi_cs_control(){
+    uint8_t cs_pin;
+    uint8_t cs_state;
+
+    cs_pin = command_buffer[SPI_SELECT_PIN];
+    cs_state = command_buffer[SPI_SELECT_STATE];
+    asm volatile("nop \n nop \n nop");
+    gpio_put(cs_pin, cs_state);
+    asm volatile("nop \n nop \n nop");
+}
+
+void read_blocking_spi(){
+    // The report_message offsets:
+    // 0 = packet length - this must be calculated
+    // 1 = SPI_READ_REPORT
+    // 2 = The i2c port - 0 or 1
+    // 3 = number of bytes read
+    // 4... = bytes read
+
+
+    spi_inst_t *spi_port;
+    size_t data_length;
+    uint8_t repeated_transmit_byte;
+    uint8_t data[command_buffer[SPI_READ_LEN]];
+
+    if(command_buffer[SPI_PORT] == 0){
+        spi_port = spi0;
+    }
+    else{
+        spi_port = spi1;
+    }
+
+    data_length = command_buffer[SPI_READ_LEN];
+    //memset(data, 0, data_length);
+    memset(data, 0, sizeof(data));
+
+    repeated_transmit_byte = command_buffer[SPI_REPEATED_DATA];
+
+    // read data
+    spi_read_blocking(spi_port, repeated_transmit_byte, data, data_length);
+    sleep_ms(100);
+
+    // build a report from the data returned
+    spi_report_message[SPI_PACKET_LENGTH] = SPI_REPORT_NUMBER_OF_DATA_BYTES + data_length;
+    spi_report_message[SPI_REPORT_ID] = SPI_REPORT;
+    spi_report_message[SPI_REPORT_PORT] = command_buffer[SPI_PORT];
+    spi_report_message[SPI_REPORT_NUMBER_OF_DATA_BYTES] = data_length;
+    for(int i=0; i < data_length; i++){
+        spi_report_message[SPI_DATA + i] = data[i];
+    }
+    serial_write((int *) spi_report_message,
+                 SPI_DATA + data_length);
+
+}
+
+void write_blocking_spi() {
+    spi_inst_t *spi_port;
+    uint cs_pin;
+    size_t data_length;
+
+    if(command_buffer[SPI_PORT] == 0){
+        spi_port = spi0;
+    }
+    else{
+        spi_port = spi1;
+    }
+
+    data_length = command_buffer[SPI_WRITE_LEN];
+    // write data
+    spi_write_blocking(spi_port, &command_buffer[SPI_WRITE_DATA], data_length);
+}
+
+
+void set_format_spi(){
+    spi_inst_t *spi_port;
+    uint data_bits = command_buffer[SPI_NUMBER_OF_BITS];
+    spi_cpol_t cpol = command_buffer[SPI_CLOCK_PHASE];
+    spi_cpha_t cpha = command_buffer[SPI_CLOCK_POLARITY];
+
+    if(command_buffer[SPI_PORT] == 0){
+        spi_port = spi0;
+    }
+    else{
+        spi_port = spi1;
+    }
+    spi_set_format(spi_port, data_bits, cpol, cpha, 1);
+}
+
+
 /******************* FOR FUTURE RELEASES **********************/
 
 void reset_data() {}
@@ -669,6 +803,7 @@ void get_next_command() {
             }
             command_buffer[i] = packet_data;
         }
+
         // the first byte is the command ID.
         // look up the function and execute it.
         // data for the command starts at index 1 in the command_buffer
@@ -678,6 +813,7 @@ void get_next_command() {
         //send_debug_info(command_buffer[0], command_buffer[1]);
 
         // call the command
+
         command_entry.command_func();
     }
 }

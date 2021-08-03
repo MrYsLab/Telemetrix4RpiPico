@@ -1,3 +1,25 @@
+# This is a working branch to implement an SPI interface.
+## An update log is below:
+
+* July 21 2021
+  * Created the spi branch.
+  
+* July 24 2021
+  * Updated Telemetrix4RpiPico.h for SPI processing
+  * init_spi method coded. Not yet tested.
+  * write_blocking_spi coded. Not yet tested.
+  
+* July 25 2021
+  * Modified write_blocking_spi function. Not yet tested.
+  * Implemented read_blocking_spi function. Not yet tested.
+  * Seperated out SPI chip select control as a seperate function 
+  
+* July 27 2021
+  * Test and debug begun. Successfuly intialized and read MPU9250
+  
+* July 28 2021
+  * First candidate release is avaialable
+
 # Telemetrix4RpiPico
 
 ![](images/tmx.png)

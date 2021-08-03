@@ -18,6 +18,7 @@
 #include "hardware/i2c.h"
 #include "hardware/pio.h"
 #include "hardware/clocks.h"
+#include "hardware/spi.h"
 #include "Telemetrix4RpiPico.pio.h"
 #include "math.h"
 
@@ -88,6 +89,17 @@ extern void read_sonar(uint);
 
 extern void read_dht(uint);
 
+extern void init_spi();
+
+extern void read_blocking_spi();
+
+extern void write_blocking_spi();
+
+extern void spi_cs_control();
+
+extern void set_format_spi();
+
+
 
 
 /*********************************************************
@@ -121,6 +133,11 @@ extern void read_dht(uint);
 #define SET_NEO_PIXEL 21
 #define CLEAR_ALL_NEO_PIXELS 22
 #define FILL_NEO_PIXELS 23
+#define SPI_INIT 24
+#define SPI_WRITE_BLOCKING 25
+#define SPI_READ_BLOCKING 26
+#define SPI_SET_FORMAT 27
+#define SPI_CS_CONTROL 28
 
 /*****************************************************
  *                  MESSAGE OFFSETS
@@ -177,6 +194,38 @@ extern void read_dht(uint);
 #define SET_PIN_MODE_ANALOG_DIFF_HIGH 3
 #define SET_PIN_MODE_ANALOG_DIFF_LOW 4
 
+// set pin mode spi offsets
+#define SPI_PORT 1
+#define SPI_MISO 2
+#define SPI_MOSI 3
+#define SPI_CLK_PIN 4
+#define SPI_FREQ_MSB 5
+#define SPI_FREQ_3 6
+#define SPI_FREQ_2 7
+#define SPI_FREQ_1 8
+#define SPI_CS_LIST_LENGTH 9
+#define SPI_CS_LIST 10 // beginning of list
+
+// spi write blocking offsets
+// #define SPI_PORT 1
+#define SPI_WRITE_LEN 2
+#define SPI_WRITE_DATA 3
+
+// spi read blocking offsets
+// #define SPI_PORT 1
+#define SPI_READ_LEN 2
+#define SPI_REPEATED_DATA 3
+
+// spi chipselect command offsets
+#define SPI_SELECT_PIN 1
+#define SPI_SELECT_STATE 2
+
+// spi set format command offsets
+// #define SPI_PORT 1
+#define SPI_NUMBER_OF_BITS 2
+#define SPI_CLOCK_PHASE 3
+#define SPI_CLOCK_POLARITY 4
+
 // digital_write
 #define DIGITAL_WRITE_GPIO_PIN 1
 #define DIGITAL_WRITE_VALUE 2
@@ -202,6 +251,16 @@ extern void read_dht(uint);
 
 #define I2C_ERROR_REPORT_LENGTH 4
 #define I2C_ERROR_REPORT_NUM_OF_BYTE_TO_SEND 5
+
+// spi report buffer offsets
+#define SPI_PACKET_LENGTH 0
+#define SPI_REPORT_ID 1
+#define SPI_REPORT_PORT 2
+#define SPI_REPORT_NUMBER_OF_DATA_BYTES 3
+#define SPI_DATA 4
+
+#define SPI_READ_DATA_BASE_BYTES 5
+
 
 // init neopixels
 // command offsets
@@ -313,6 +372,7 @@ const uint DHT_MAX_TIMINGS = 85;
 #define I2C_READ_REPORT 10
 #define SONAR_DISTANCE 11
 #define DHT_REPORT 12
+#define SPI_REPORT 13
 #define DEBUG_PRINT 99
 
 /***************************************************************
@@ -330,7 +390,7 @@ const uint DHT_MAX_TIMINGS = 85;
 
 /* Firmware Version Values */
 #define FIRMWARE_MAJOR 1
-#define FIRMWARE_MINOR 0
+#define FIRMWARE_MINOR 1
 
 // maximum length of a command packet in bytes
 #define MAX_COMMAND_LENGTH 30
