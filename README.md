@@ -4,6 +4,8 @@
 
 The Pico server code may be viewed [here.](https://github.com/MrYsLab/Telemetrix4RpiPico)
 
+You may download the .uf2 file [here.](https://github.com/MrYsLab/Telemetrix4RpiPico/raw/master/cmake-build-release/Telemetrix4RpiPico.uf2)
+
 The following functionality is implemented in this release:
 
 * Analog Input
