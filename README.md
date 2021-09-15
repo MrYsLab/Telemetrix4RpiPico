@@ -28,4 +28,4 @@ allows you to control a Raspberry Pi Pico remotely from your
 PC. A complete [User's Guide](https://mryslab.github.io/telemetrix-rpi-pico/) is available describing how to 
 install and use both the server and client.
 
-To install the server, follow these [installation instructions.](https://mryslab.github.io/telemetrix-rpi-pico/install_pico_server.html)
+To install the server, follow these [installation instructions](https://mryslab.github.io/telemetrix-rpi-pico/install_pico_server/).
