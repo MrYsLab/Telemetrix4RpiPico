@@ -1073,7 +1073,15 @@ int main() {
 
     // blink the board LED twice to show that the board is
     // starting afresh
-    led_debug(2, 250);
+    led_debug(4, 125);
+
+
+	// XXX
+	uint64_t previousTime_InUS = 0; 
+
+#define TEST_PIN 4
+		gpio_init(TEST_PIN);
+		gpio_set_dir(TEST_PIN, GPIO_OUT);
 
     // infinite loop
     while (true) {
@@ -1084,7 +1092,14 @@ int main() {
             scan_sonars();
             scan_dhts();
         }
-
+		
+		uint64_t currentTime_InUS = time_us_64();
+		if ((currentTime_InUS-previousTime_InUS) > 50) {
+			gpio_put(TEST_PIN, 1);
+			sleep_us(1);
+			gpio_put(TEST_PIN, 0);
+			previousTime_InUS = currentTime_InUS;
+		}	
 
     }
 }
