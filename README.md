@@ -18,6 +18,7 @@ The following functionality is implemented in this release:
 * Servo Support
 * HC-SR04 Type Sonar Distance Sensor Support
 * DHT 11 and 22 Humidity/Temperature Sensor Support
+* Stepper Motor Support
 * Autodetect PICO device over USB Serial.
 * Automatic board reset of the PICO using the watchdog timer when application exits.
   * Board will blink twice upon reset.
