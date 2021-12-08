@@ -99,12 +99,6 @@ extern void spi_cs_control();
 
 extern void set_format_spi();
 
-extern void stepper_new();
-
-extern void stepper_move();
-
-extern void get_stepper_status();
-
 
 
 
@@ -144,9 +138,6 @@ extern void get_stepper_status();
 #define SPI_READ_BLOCKING 26
 #define SPI_SET_FORMAT 27
 #define SPI_CS_CONTROL 28
-#define STEPPER_NEW 39
-#define STEPPER_MOVE 30
-#define GET_STEPPER_STATUS 31
 
 /*****************************************************
  *                  MESSAGE OFFSETS
@@ -398,8 +389,8 @@ const uint DHT_MAX_TIMINGS = 85;
 #define MAX_ANALOG_PINS_SUPPORTED 5
 
 /* Firmware Version Values */
-#define FIRMWARE_MAJOR 2
-#define FIRMWARE_MINOR 0
+#define FIRMWARE_MAJOR 1
+#define FIRMWARE_MINOR 1
 
 // maximum length of a command packet in bytes
 #define MAX_COMMAND_LENGTH 30
@@ -462,6 +453,3 @@ typedef struct {
     void (*command_func)(void);
 } command_descriptor;
 #endif //TELEMETRIX4RPIPICO_TELEMETRIX4RPIPICO_H
-
-#define max(a,b) ({ __typeof__ (a) _a = (a); __typeof__ (b) _b = (b);  _a > _b ? _a : _b; })
-#define min(a,b) ({ __typeof__ (a) _a = (a); __typeof__ (b) _b = (b);  _a < _b ? _a : _b; })
