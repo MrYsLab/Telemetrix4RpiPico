@@ -208,13 +208,13 @@ extern void set_format_spi();
 
 // spi write blocking offsets
 // #define SPI_PORT 1
-#define SPI_WRITE_LEN 2
-#define SPI_WRITE_DATA 3
+#define SPI_WRITE_LEN 2 // 16bit uint number 2 and 3 is length info
+#define SPI_WRITE_DATA 4
 
 // spi read blocking offsets
 // #define SPI_PORT 1
-#define SPI_READ_LEN 2
-#define SPI_REPEATED_DATA 3
+#define SPI_READ_LEN 2 // 16bit uint number 2 and 3 is length info
+#define SPI_REPEATED_DATA 4
 
 // spi chipselect command offsets
 #define SPI_SELECT_PIN 1
@@ -393,7 +393,8 @@ const uint DHT_MAX_TIMINGS = 85;
 #define FIRMWARE_MINOR 1
 
 // maximum length of a command packet in bytes
-#define MAX_COMMAND_LENGTH 30
+#define MAX_COMMAND_LENGTH 4096
+#define COMMAND_HEADER_LENGTH 4
 
 
 // Indicator that no i2c register is being specified in the command

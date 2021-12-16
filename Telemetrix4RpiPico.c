@@ -40,7 +40,7 @@
 const uint LED_PIN = 25; // board LED
 
 // buffer to hold incoming command data
-uint8_t command_buffer[MAX_COMMAND_LENGTH];
+uint8_t command_buffer[MAX_COMMAND_LENGTH + COMMAND_HEADER_LENGTH];
 
 bool stop_reports = false; // a flag to stop sending all report messages
 
@@ -115,7 +115,7 @@ int firmware_report_message[] = {3, FIRMWARE_REPORT, FIRMWARE_MAJOR, FIRMWARE_MI
 int i2c_report_message[64];
 
 // buffer to hold spi report data
-int spi_report_message[64];
+int spi_report_message[MAX_COMMAND_LENGTH + COMMAND_HEADER_LENGTH];
 
 
 // get_pico_unique_id report buffer
@@ -685,6 +685,16 @@ void spi_cs_control(){
     asm volatile("nop \n nop \n nop");
 }
 
+void write_blocking_spi_done(){
+    int data_length = 5;
+    spi_report_message[SPI_PACKET_LENGTH] = SPI_REPORT_NUMBER_OF_DATA_BYTES + data_length;
+    spi_report_message[SPI_REPORT_ID] = SPI_REPORT;
+    spi_report_message[SPI_REPORT_PORT] = command_buffer[SPI_PORT];
+    spi_report_message[SPI_REPORT_NUMBER_OF_DATA_BYTES] = data_length;
+    spi_report_message[SPI_DATA] = 0;
+    serial_write((int *) spi_report_message, SPI_DATA+data_length);
+}
+
 void read_blocking_spi(){
     // The report_message offsets:
     // 0 = packet length - this must be calculated
@@ -697,7 +707,7 @@ void read_blocking_spi(){
     spi_inst_t *spi_port;
     size_t data_length;
     uint8_t repeated_transmit_byte;
-    uint8_t data[command_buffer[SPI_READ_LEN]];
+    uint8_t data[MAX_COMMAND_LENGTH];
 
     if(command_buffer[SPI_PORT] == 0){
         spi_port = spi0;
@@ -706,10 +716,12 @@ void read_blocking_spi(){
         spi_port = spi1;
     }
 
-    data_length = command_buffer[SPI_READ_LEN];
-    //memset(data, 0, data_length);
-    memset(data, 0, sizeof(data));
-
+    data_length = (size_t)(command_buffer[SPI_WRITE_LEN + 1] << 8) |
+                  (size_t)(command_buffer[SPI_WRITE_LEN]);
+    if (data_length > MAX_COMMAND_LENGTH){
+        // Requesting too big data size
+        data_length = MAX_COMMAND_LENGTH;
+    }
     repeated_transmit_byte = command_buffer[SPI_REPEATED_DATA];
 
     // read data
@@ -724,8 +736,7 @@ void read_blocking_spi(){
     for(int i=0; i < data_length; i++){
         spi_report_message[SPI_DATA + i] = data[i];
     }
-    serial_write((int *) spi_report_message,
-                 SPI_DATA + data_length);
+    serial_write((int *) spi_report_message, SPI_DATA + data_length);
 
 }
 
@@ -741,11 +752,13 @@ void write_blocking_spi() {
         spi_port = spi1;
     }
 
-    data_length = command_buffer[SPI_WRITE_LEN];
+    data_length = (size_t)(command_buffer[SPI_WRITE_LEN + 1] << 8) |
+                  (size_t)(command_buffer[SPI_WRITE_LEN]);
+
     // write data
     spi_write_blocking(spi_port, &command_buffer[SPI_WRITE_DATA], data_length);
+    write_blocking_spi_done();
 }
-
 
 void set_format_spi(){
     spi_inst_t *spi_port;
@@ -782,40 +795,36 @@ void servo_detach() {}
  * Retrieve the next command and process it
  */
 void get_next_command() {
-    int packet_size;
     uint8_t packet_data;
     command_descriptor command_entry;
 
     // clear the command buffer for the new incoming command
     memset(command_buffer, 0, sizeof(command_buffer));
+    while(getchar() != 0xee);
 
     // Get the number of bytes of the command packet.
     // The first byte is the command ID and the following bytes
     // are the associated data bytes
-    if ((packet_size = getchar_timeout_us(0)) == PICO_ERROR_TIMEOUT) {
-        // no data, let the main loop continue to run to handle inputs
-        return;
-    } else {
-        // get the rest of the packet
-        for (int i = 0; i < packet_size; i++) {
-            if ((packet_data = (uint8_t) getchar_timeout_us(0)) == PICO_ERROR_TIMEOUT) {
-                sleep_ms(1);
-            }
-            command_buffer[i] = packet_data;
-        }
+    int byte2 = getchar();
+    int byte3 = getchar();
+    int packet_size = byte2 | byte3 << 8 ;
 
-        // the first byte is the command ID.
-        // look up the function and execute it.
-        // data for the command starts at index 1 in the command_buffer
-        command_entry = command_table[command_buffer[0]];
-
-        // uncomment to see the command and first byte of data
-        //send_debug_info(command_buffer[0], command_buffer[1]);
-
-        // call the command
-
-        command_entry.command_func();
+    // get the rest of the packet
+    for (int i = 0; i < packet_size; i++) {
+        command_buffer[i] = (uint8_t) getchar();
     }
+
+    // the first byte is the command ID.
+    // look up the function and execute it.
+    // data for the command starts at index 1 in the command_buffer
+    command_entry = command_table[command_buffer[0]];
+
+    // uncomment to see the command and first byte of data
+    //send_debug_info(command_buffer[0], command_buffer[1]);
+
+    // call the command
+    command_entry.command_func();
+    return;
 }
 
 /**************************************
