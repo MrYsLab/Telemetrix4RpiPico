@@ -1083,6 +1083,7 @@ int main() {
             scan_analog_inputs();
             scan_sonars();
             scan_dhts();
+            sleep_ms(20);
         }
 
 
