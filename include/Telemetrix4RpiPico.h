@@ -99,6 +99,8 @@ extern void spi_cs_control();
 
 extern void set_format_spi();
 
+extern void set_scan_delay();
+
 
 
 
@@ -260,6 +262,9 @@ extern void set_format_spi();
 #define SPI_DATA 4
 
 #define SPI_READ_DATA_BASE_BYTES 5
+
+// scan delay buffer offsets
+#define SCAN_DELAY 1
 
 
 // init neopixels

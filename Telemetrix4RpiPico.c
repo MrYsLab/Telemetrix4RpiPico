@@ -77,6 +77,9 @@ uint8_t pixel_buffer[MAXIMUM_NUM_NEOPIXELS][3];
 
 uint actual_number_of_pixels;
 
+// scan delay
+uint8_t scan_delay = 0;
+
 static inline void put_pixel(uint32_t pixel_grb) {
     pio_sm_put_blocking(pio0, 0, pixel_grb << 8u);
 
@@ -172,7 +175,8 @@ command_descriptor command_table[] =
                 {&write_blocking_spi},
                 {&read_blocking_spi},
                 {&set_format_spi},
-                {&spi_cs_control}
+                {&spi_cs_control},
+                {&set_scan_delay},
         };
 
 
@@ -685,6 +689,11 @@ void spi_cs_control(){
     asm volatile("nop \n nop \n nop");
 }
 
+void set_scan_delay(){
+
+    scan_delay = command_buffer[SCAN_DELAY];
+}
+
 void read_blocking_spi(){
     // The report_message offsets:
     // 0 = packet length - this must be calculated
@@ -962,7 +971,7 @@ void read_dht(uint dht_pin) {
 
     gpio_set_dir(dht_pin, GPIO_OUT);
     gpio_put(dht_pin, 0);
-    sleep_ms(20);
+    sleep_ms(scan_delay);
     gpio_set_dir(dht_pin, GPIO_IN);
 
     sleep_us(1);
