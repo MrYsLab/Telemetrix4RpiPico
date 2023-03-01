@@ -971,7 +971,7 @@ void read_dht(uint dht_pin) {
 
     gpio_set_dir(dht_pin, GPIO_OUT);
     gpio_put(dht_pin, 0);
-    sleep_ms(scan_delay);
+    sleep_ms(20);
     gpio_set_dir(dht_pin, GPIO_IN);
 
     sleep_us(1);
@@ -1092,7 +1092,7 @@ int main() {
             scan_analog_inputs();
             scan_sonars();
             scan_dhts();
-            sleep_ms(20);
+            sleep_ms(scan_delay);
         }
 
 
